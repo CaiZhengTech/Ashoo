@@ -3,6 +3,7 @@ package com.ashoo.api;
 import com.ashoo.api.dto.SnapshotResponse;
 import com.ashoo.ingestion.IngestionService;
 import com.ashoo.ingestion.openmeteo.OpenMeteoClient;
+import com.ashoo.location.LocationService;
 import com.ashoo.storage.entity.EnvironmentalSnapshot;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -26,11 +27,14 @@ public class ConditionsController {
 
     private final OpenMeteoClient openMeteoClient;
     private final IngestionService ingestionService;
+    private final LocationService locationService;
 
     public ConditionsController(OpenMeteoClient openMeteoClient,
-                                 IngestionService ingestionService) {
+                                 IngestionService ingestionService,
+                                 LocationService locationService) {
         this.openMeteoClient = openMeteoClient;
         this.ingestionService = ingestionService;
+        this.locationService = locationService;
     }
 
     /**
@@ -55,8 +59,9 @@ public class ConditionsController {
     /**
      * Fetches live conditions for a city name.
      *
-     * Geocodes the city name first via Open-Meteo, then fetches conditions
-     * for the resolved coordinates.
+     * Geocodes the city name first via Open-Meteo, fetches conditions for the
+     * resolved coordinates, then records this as a recent search so the user
+     * can quickly re-access it from the locations panel.
      *
      * @param city the city name to look up (e.g., "Amsterdam")
      * @return current conditions, or 404 if the city can't be geocoded
@@ -72,6 +77,11 @@ public class ConditionsController {
         Optional<EnvironmentalSnapshot> snapshot =
                 openMeteoClient.fetchCurrent(resolved.latitude(), resolved.longitude(),
                         resolved.displayName());
+
+        if (snapshot.isPresent()) {
+            locationService.recordRecentSearch(
+                    resolved.displayName(), resolved.latitude(), resolved.longitude());
+        }
 
         return snapshot
                 .map(SnapshotResponse::from)
