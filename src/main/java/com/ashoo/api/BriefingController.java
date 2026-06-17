@@ -2,6 +2,7 @@ package com.ashoo.api;
 
 import com.ashoo.api.dto.BriefingResponse;
 import com.ashoo.briefing.BriefingService;
+import com.ashoo.common.DemoUsers;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -18,8 +19,6 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/api/v1/briefing")
 public class BriefingController {
 
-    private static final String DEFAULT_USER = "ashoo-user";
-
     private final BriefingService briefingService;
 
     public BriefingController(BriefingService briefingService) {
@@ -30,10 +29,13 @@ public class BriefingController {
      * Generates or retrieves today's daily briefing.
      *
      * @param demo whether to mark this as a demo briefing (logged separately)
+     * @param user optional persona to view (default user when omitted/unknown)
      * @return the briefing text plus metadata
      */
     @GetMapping("/today")
-    public BriefingResponse today(@RequestParam(defaultValue = "false") boolean demo) {
-        return BriefingResponse.from(briefingService.getTodayBriefing(DEFAULT_USER, demo));
+    public BriefingResponse today(@RequestParam(defaultValue = "false") boolean demo,
+                                  @RequestParam(required = false) String user) {
+        return BriefingResponse.from(
+                briefingService.getTodayBriefing(DemoUsers.resolve(user), demo));
     }
 }

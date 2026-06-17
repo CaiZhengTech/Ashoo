@@ -86,6 +86,21 @@ docker-compose up -d
 #    Health:      http://localhost:8080/actuator/health
 ```
 
+### Running the frontend
+
+The React UI lives in [`frontend/`](frontend/README.md). With the backend running on
+`:8080`:
+
+```bash
+cd frontend
+npm install
+npm run dev        # http://localhost:5173 (proxies /api → :8080)
+```
+
+The browser cross-origin call is allowed by `com.ashoo.common.WebCorsConfig`; add a
+production frontend origin via the `ashoo.cors.allowed-origins` property. See
+[`frontend/README.md`](frontend/README.md) for the full page tour and deploy steps.
+
 ### Running the tests
 
 The test suite uses Testcontainers to spin up a real TimescaleDB — Docker must be running.

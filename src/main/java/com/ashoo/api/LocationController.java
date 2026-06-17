@@ -112,6 +112,24 @@ public class LocationController {
                 .toList();
     }
 
+    /**
+     * Type-ahead place suggestions for the search box.
+     *
+     * @param q     the partial place name being typed
+     * @param limit max suggestions (defaults to 6)
+     * @return candidate places with display name and coordinates
+     */
+    @GetMapping("/suggest")
+    public List<Map<String, Object>> suggest(@RequestParam String q,
+                                             @RequestParam(defaultValue = "6") int limit) {
+        return locationService.suggest(q, limit).stream()
+                .map(g -> Map.<String, Object>of(
+                        "cityName", g.displayName(),
+                        "latitude", g.latitude(),
+                        "longitude", g.longitude()))
+                .toList();
+    }
+
     private Map<String, Object> toMap(RecentSearch s) {
         return Map.of(
                 "id", s.getId(),

@@ -1,4 +1,4 @@
-package com.ashoo.correlation;
+                                package com.ashoo.correlation;
 
 /**
  * How much to trust a correlation result, based on how many symptom days

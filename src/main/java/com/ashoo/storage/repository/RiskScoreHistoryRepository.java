@@ -50,6 +50,19 @@ public class RiskScoreHistoryRepository {
     }
 
     /**
+     * Deletes a user's entire score history.
+     *
+     * Used before a demo backfill so re-seeding rebuilds a clean trend rather than
+     * stacking a second overlapping series on top of the first.
+     *
+     * @param userId the user whose score history to clear
+     * @return number of rows deleted
+     */
+    public int deleteByUserId(String userId) {
+        return jdbc.update("DELETE FROM risk_score_history WHERE user_id = ?", userId);
+    }
+
+    /**
      * Returns the most recent score for a user — the prior state the next EWMA
      * and hysteresis step needs.
      *

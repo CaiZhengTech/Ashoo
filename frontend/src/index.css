@@ -1,0 +1,83 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
+  body {
+    @apply text-ink-800 font-sans antialiased;
+    /* Calming sage-green canvas. A soft, low-saturation wash of sage that is restful
+       on the eyes, with the faintest warm and cool sage variations so it feels organic
+       rather than flat. White cards float cleanly on top and text stays crisp. */
+    background-color: #eef2e8;
+    background-image:
+      radial-gradient(900px 520px at 8% -8%, rgba(150, 178, 138, 0.30), transparent 62%),
+      radial-gradient(820px 480px at 96% 2%, rgba(176, 198, 160, 0.24), transparent 58%),
+      radial-gradient(1000px 720px at 50% 110%, rgba(196, 208, 176, 0.22), transparent 62%);
+    background-attachment: fixed;
+    min-height: 100vh;
+  }
+
+  :focus-visible {
+    @apply outline-none ring-2 ring-brand-500 ring-offset-2 ring-offset-ink-100;
+  }
+}
+
+@layer components {
+  .card {
+    @apply rounded-2xl border border-ink-200/70 bg-white shadow-card;
+  }
+
+  .card-pad {
+    @apply p-5 sm:p-6;
+  }
+
+  .label-eyebrow {
+    @apply text-xs font-semibold uppercase tracking-wider text-ink-500;
+  }
+
+  /* Modern, smooth range slider. The track is a soft brand gradient and the thumb
+     lifts on hover/active for a tactile feel. Used on Log severity + reminder rules. */
+  .slider {
+    @apply h-2 w-full cursor-pointer appearance-none rounded-full bg-ink-200;
+    background-image: linear-gradient(90deg, #43c4c1, #188585);
+    background-repeat: no-repeat;
+    /* No transition on the fill: it must track the thumb instantly while dragging,
+       otherwise the fill trails the handle and feels laggy on release. */
+  }
+  .slider::-webkit-slider-thumb {
+    @apply h-5 w-5 appearance-none rounded-full border-2 border-white bg-brand-600;
+    box-shadow: 0 1px 4px rgba(16, 24, 40, 0.25);
+    transition: transform 0.12s ease, box-shadow 0.12s ease;
+  }
+  .slider::-webkit-slider-thumb:hover {
+    transform: scale(1.18);
+  }
+  .slider:active::-webkit-slider-thumb {
+    transform: scale(1.28);
+    box-shadow: 0 2px 8px rgba(24, 133, 133, 0.45);
+  }
+  .slider::-moz-range-thumb {
+    @apply h-5 w-5 rounded-full border-2 border-white bg-brand-600;
+    box-shadow: 0 1px 4px rgba(16, 24, 40, 0.25);
+  }
+
+  /* Skeleton shimmer used for all loading states. */
+  .skeleton {
+    @apply relative overflow-hidden rounded-md bg-ink-200/70;
+  }
+  .skeleton::after {
+    @apply absolute inset-0 -translate-x-full animate-shimmer;
+    content: '';
+    background-image: linear-gradient(
+      90deg,
+      transparent,
+      rgba(255, 255, 255, 0.65),
+      transparent
+    );
+  }
+}

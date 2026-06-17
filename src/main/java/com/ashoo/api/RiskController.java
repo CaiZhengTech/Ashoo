@@ -2,6 +2,7 @@ package com.ashoo.api;
 
 import com.ashoo.api.dto.RiskCurrentResponse;
 import com.ashoo.api.dto.RiskHistoryPointResponse;
+import com.ashoo.common.DemoUsers;
 import com.ashoo.correlation.RiskScoringService;
 import com.ashoo.storage.repository.RiskScoreHistoryRepository;
 import org.springframework.http.ResponseEntity;
@@ -21,8 +22,6 @@ import java.util.List;
 @RequestMapping("/api/v1/risk")
 public class RiskController {
 
-    private static final String DEFAULT_USER = "ashoo-user";
-
     private final RiskScoringService riskScoringService;
     private final RiskScoreHistoryRepository riskHistoryRepo;
 
@@ -35,12 +34,15 @@ public class RiskController {
     /**
      * Returns the current Personal Risk Index with its full factor breakdown.
      *
+     * @param user optional persona to view (default user when omitted/unknown)
      * @return the score and breakdown, or 409 Conflict if the model has not been
      *         computed yet (no snapshot ingested, or /correlation/compute never run)
      */
     @GetMapping("/current")
-    public ResponseEntity<RiskCurrentResponse> current() {
-        return riskScoringService.currentBreakdown(DEFAULT_USER, DEFAULT_USER)
+    public ResponseEntity<RiskCurrentResponse> current(
+            @RequestParam(required = false) String user) {
+        String userId = DemoUsers.resolve(user);
+        return riskScoringService.currentBreakdown(userId, DemoUsers.ENV_USER)
                 .map(RiskCurrentResponse::from)
                 .map(ResponseEntity::ok)
                 .orElseGet(() -> ResponseEntity.status(409).build());
@@ -51,13 +53,15 @@ public class RiskController {
      *
      * @param from inclusive start (ISO-8601)
      * @param to   inclusive end (ISO-8601)
+     * @param user optional persona to view (default user when omitted/unknown)
      * @return the trend points for charting
      */
     @GetMapping("/history")
     public List<RiskHistoryPointResponse> history(
             @RequestParam Instant from,
-            @RequestParam Instant to) {
-        return riskHistoryRepo.findByDateRange(DEFAULT_USER, from, to).stream()
+            @RequestParam Instant to,
+            @RequestParam(required = false) String user) {
+        return riskHistoryRepo.findByDateRange(DemoUsers.resolve(user), from, to).stream()
                 .map(RiskHistoryPointResponse::from)
                 .toList();
     }

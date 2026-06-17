@@ -33,10 +33,11 @@ public record RiskCurrentResponse(
 
     /** One factor's contribution, flattened for JSON. */
     public record FactorView(String key, String displayName, double percentile,
-                             boolean aboveThreshold, double weight) {
+                             boolean aboveThreshold, double weight,
+                             Double value, String unit) {
         static FactorView from(FactorContribution c) {
             return new FactorView(c.key(), c.displayName(), c.percentile(),
-                    c.aboveThreshold(), c.weight());
+                    c.aboveThreshold(), c.weight(), c.value(), c.unit());
         }
     }
 

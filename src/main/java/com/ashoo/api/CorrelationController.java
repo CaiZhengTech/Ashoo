@@ -2,8 +2,10 @@ package com.ashoo.api;
 
 import com.ashoo.api.dto.CorrelationResultResponse;
 import com.ashoo.api.dto.MismatchDayResponse;
+import com.ashoo.common.DemoUsers;
 import com.ashoo.correlation.CorrelationService;
 import com.ashoo.correlation.CorrelationService.CorrelationSummary;
+import com.ashoo.correlation.RiskScoringService;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -20,32 +22,47 @@ import java.util.List;
 @RequestMapping("/api/v1/correlation")
 public class CorrelationController {
 
-    private static final String DEFAULT_USER = "ashoo-user";
+    /** Days of trend to backfill, covering the dashboard's longest range (6 months);
+     *  naturally capped by however much environmental history exists. */
+    private static final int TREND_DAYS = 180;
 
     private final CorrelationService correlationService;
+    private final RiskScoringService riskScoringService;
 
-    public CorrelationController(CorrelationService correlationService) {
+    public CorrelationController(CorrelationService correlationService,
+                                 RiskScoringService riskScoringService) {
         this.correlationService = correlationService;
+        this.riskScoringService = riskScoringService;
     }
 
     /**
-     * Recomputes all correlations for the default user from their full history.
+     * Recomputes all correlations for the default user, then rebuilds their daily risk
+     * trend so the dashboard chart reflects the new model.
+     *
+     * Backfilling here (rather than waiting for the hourly scorer to accumulate points)
+     * means a freshly seeded or re-logged user immediately sees a real multi-day trend
+     * instead of a single "now" point. The hourly scheduler is untouched — it still
+     * appends one live point per run on top of this baseline.
      *
      * @return a summary of the run: factors kept, symptom days used, confidence, timing
      */
     @PostMapping("/compute")
-    public CorrelationSummary compute() {
-        return correlationService.compute(DEFAULT_USER);
+    public CorrelationSummary compute(@RequestParam(required = false) String user) {
+        String userId = DemoUsers.resolve(user);
+        CorrelationSummary summary = correlationService.computeAndStore(userId, DemoUsers.ENV_USER);
+        riskScoringService.backfillHistory(userId, DemoUsers.ENV_USER, TREND_DAYS);
+        return summary;
     }
 
     /**
      * Returns the cached per-factor correlation results, strongest weight first.
      *
+     * @param user optional persona to view (default user when omitted/unknown)
      * @return the factor breakdown with rho, threshold, weight, and confidence
      */
     @GetMapping("/results")
-    public List<CorrelationResultResponse> results() {
-        return correlationService.findResults(DEFAULT_USER).stream()
+    public List<CorrelationResultResponse> results(@RequestParam(required = false) String user) {
+        return correlationService.findResults(DemoUsers.resolve(user)).stream()
                 .map(CorrelationResultResponse::from)
                 .toList();
     }
@@ -53,11 +70,12 @@ public class CorrelationController {
     /**
      * Returns days where the model's score disagreed with the logged symptoms.
      *
+     * @param user optional persona to view (default user when omitted/unknown)
      * @return mismatch days ordered by how surprising they are
      */
     @GetMapping("/mismatches")
-    public List<MismatchDayResponse> mismatches() {
-        return correlationService.findMismatchDays(DEFAULT_USER, DEFAULT_USER).stream()
+    public List<MismatchDayResponse> mismatches(@RequestParam(required = false) String user) {
+        return correlationService.findMismatchDays(DemoUsers.resolve(user), DemoUsers.ENV_USER).stream()
                 .map(MismatchDayResponse::from)
                 .toList();
     }

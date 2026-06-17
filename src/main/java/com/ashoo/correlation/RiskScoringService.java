@@ -15,6 +15,8 @@ import org.springframework.stereotype.Service;
 
 import java.time.Duration;
 import java.time.Instant;
+import java.time.LocalDate;
+import java.time.ZoneOffset;
 import java.util.*;
 
 /**
@@ -33,6 +35,25 @@ public class RiskScoringService {
 
     /** Window of history used as the reference distribution for percentile normalization. */
     private static final int HISTORY_DAYS = 180;
+
+    /**
+     * Personalizes a factor's score input by its relationship to the person's threshold.
+     *
+     * Crossing THIS person's learned threshold means the reading resembles conditions that
+     * have preceded their symptoms, a strong personal-risk signal in its own right, so an
+     * above-threshold factor contributes high (60-100) regardless of its raw percentile.
+     * A below-threshold factor contributes low (0-35), scaled by how elevated it is. The
+     * net effect: a sensitive person (low thresholds, so many factors are above) scores
+     * notably higher than a tolerant one in the very same air, which is the whole point of
+     * a PERSONAL risk index.
+     *
+     * @param percentile     how high today's reading is vs the person's history (0-100)
+     * @param aboveThreshold whether it crossed the level that has preceded their symptoms
+     * @return the value fed into the weighted score
+     */
+    private static double personalScoreInput(double percentile, boolean aboveThreshold) {
+        return aboveThreshold ? 60.0 + 0.40 * percentile : 0.35 * percentile;
+    }
 
     private final EnvironmentalSnapshotRepository snapshotRepo;
     private final CorrelationResultRepository correlationRepo;
@@ -121,6 +142,7 @@ public class RiskScoringService {
         Map<Factor, List<Double>> historyByFactor = collectHistory(history);
 
         Map<String, Double> normalizedScores = new HashMap<>();
+        Map<String, Double> scoreInputs = new HashMap<>();
         Map<String, Double> weights = new HashMap<>();
         List<FactorContribution> contributions = new ArrayList<>();
 
@@ -137,9 +159,14 @@ public class RiskScoringService {
                     && value >= row.getPersonalThreshold();
 
             normalizedScores.put(factor.getKey(), percentile);
+            // The score input is personalized: a reading below THIS person's learned
+            // threshold counts for less, so a highly sensitive person (low thresholds,
+            // most factors above) scores higher than a tolerant one in the same air.
+            scoreInputs.put(factor.getKey(), personalScoreInput(percentile, aboveThreshold));
             weights.put(factor.getKey(), weight);
             contributions.add(new FactorContribution(
-                    factor.getKey(), factor.getDisplayName(), percentile, aboveThreshold, weight));
+                    factor.getKey(), factor.getDisplayName(), percentile, aboveThreshold, weight,
+                    value, factor.getUnit()));
         }
 
         if (normalizedScores.isEmpty()) {
@@ -151,7 +178,7 @@ public class RiskScoringService {
         boolean prevAlert = prior.map(p -> Boolean.TRUE.equals(p.getAlertTriggered())).orElse(false);
 
         RiskScoreResult result = riskScorer.computeScore(
-                normalizedScores, weights, prevSmoothed, prevAlert);
+                scoreInputs, weights, prevSmoothed, prevAlert);
 
         int symptomDays = symptomRepo.countSymptomDays(userId);
         ConfidenceLevel confidence = ConfidenceLevel.fromSymptomDays(symptomDays);
@@ -161,6 +188,102 @@ public class RiskScoringService {
 
         return Optional.of(new RiskScoreBreakdown(
                 Instant.now(), result, confidence, symptomDays, contributions, normalizedScores));
+    }
+
+    /**
+     * Rebuilds a day-by-day risk score history so the dashboard trend chart has a real
+     * time series instead of a single point computed "now".
+     *
+     * The live {@link #currentBreakdown} only ever scores the latest snapshot, so a fresh
+     * demo would otherwise show a flat one-day chart. This walks the last {@code days}
+     * days in chronological order, scores each against that day's snapshot using the same
+     * learned model, and advances the EWMA/hysteresis chain across days — producing the
+     * same smoothed signal the hourly scheduler would have built up over time. Existing
+     * history is cleared first so re-seeding stays idempotent.
+     *
+     * @param userId    the user whose model and history series this builds
+     * @param envUserId the owner of the environmental snapshots (same as userId in V1)
+     * @param days      how many days back to backfill
+     * @return number of daily score rows written
+     */
+    public int backfillHistory(String userId, String envUserId, int days) {
+        List<CorrelationResult> model = correlationRepo.findByUserId(userId);
+        if (model.isEmpty()) {
+            return 0;
+        }
+
+        Instant now = Instant.now();
+        Instant from = now.minus(Duration.ofDays(HISTORY_DAYS));
+        List<EnvironmentalSnapshot> history = snapshotRepo.findByDateRange(envUserId, from, now);
+        if (history.isEmpty()) {
+            return 0;
+        }
+        Map<Factor, List<Double>> historyByFactor = collectHistory(history);
+
+        // One representative snapshot per day (highest PM2.5 — the same daily pick the
+        // demo symptom generator uses, so symptoms and scores reference the same reading).
+        Map<LocalDate, EnvironmentalSnapshot> byDay = new TreeMap<>();
+        for (EnvironmentalSnapshot s : history) {
+            LocalDate day = s.getRecordedAt().atZone(ZoneOffset.UTC).toLocalDate();
+            byDay.merge(day, s, (a, b) ->
+                    (a.getPm25() != null && b.getPm25() != null && a.getPm25() >= b.getPm25()) ? a : b);
+        }
+
+        LocalDate cutoff = LocalDate.now(ZoneOffset.UTC).minusDays(days);
+        int symptomDays = symptomRepo.countSymptomDays(userId);
+        ConfidenceLevel confidence = ConfidenceLevel.fromSymptomDays(symptomDays);
+
+        riskHistoryRepo.deleteByUserId(userId);
+
+        Double prevSmoothed = null;
+        boolean prevAlert = false;
+        int written = 0;
+
+        for (Map.Entry<LocalDate, EnvironmentalSnapshot> entry : byDay.entrySet()) {
+            LocalDate day = entry.getKey();
+            if (day.isBefore(cutoff)) continue;
+            EnvironmentalSnapshot snap = entry.getValue();
+
+            Map<String, Double> normalizedScores = new HashMap<>();
+            Map<String, Double> scoreInputs = new HashMap<>();
+            Map<String, Double> weights = new HashMap<>();
+            for (CorrelationResult row : model) {
+                Factor factor = Factor.fromKey(row.getFactorName());
+                if (factor == null) continue;
+                Double value = factor.extract(snap);
+                if (value == null) continue;
+                double percentile =
+                        normalizer.normalize(value, historyByFactor.getOrDefault(factor, List.of()));
+                boolean aboveThreshold = row.getPersonalThreshold() != null
+                        && value >= row.getPersonalThreshold();
+                normalizedScores.put(factor.getKey(), percentile);
+                scoreInputs.put(factor.getKey(), personalScoreInput(percentile, aboveThreshold));
+                weights.put(factor.getKey(), row.getWeight() != null ? row.getWeight() : 0.0);
+            }
+            if (normalizedScores.isEmpty()) continue;
+
+            RiskScoreResult result =
+                    riskScorer.computeScore(scoreInputs, weights, prevSmoothed, prevAlert);
+
+            RiskScoreHistory rowToSave = new RiskScoreHistory();
+            rowToSave.setScoredAt(day.atTime(12, 0).toInstant(ZoneOffset.UTC));
+            rowToSave.setUserId(userId);
+            rowToSave.setRiskScore(result.rawScore());
+            rowToSave.setRiskScoreSmoothed(result.smoothedScore());
+            rowToSave.setRiskLabel(result.level().getLabel());
+            rowToSave.setAlertTriggered(result.alertActive());
+            rowToSave.setFactorScores(toJson(normalizedScores));
+            rowToSave.setConfidenceLevel(confidence.name());
+            rowToSave.setSymptomDaysAvailable(symptomDays);
+            riskHistoryRepo.save(rowToSave);
+
+            prevSmoothed = result.smoothedScore();
+            prevAlert = result.alertActive();
+            written++;
+        }
+
+        log.info("Backfilled {} daily risk scores for user '{}'", written, userId);
+        return written;
     }
 
     private void persist(String userId, RiskScoreBreakdown b) {
@@ -214,7 +337,8 @@ public class RiskScoringService {
      * @param weight         this factor's importance weight in the model
      */
     public record FactorContribution(String key, String displayName, double percentile,
-                                     boolean aboveThreshold, double weight) {}
+                                     boolean aboveThreshold, double weight,
+                                     Double value, String unit) {}
 
     /**
      * The full result of a scoring run.

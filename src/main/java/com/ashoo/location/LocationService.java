@@ -88,6 +88,21 @@ public class LocationService {
     }
 
     /**
+     * Returns place suggestions for a type-ahead search box.
+     *
+     * Delegates to the geocoder's multi-result lookup so the user can disambiguate
+     * between similarly named places before committing to one.
+     *
+     * @param query the partial place name being typed
+     * @param limit max suggestions to return
+     * @return candidate places (empty if none/blank/too short)
+     */
+    public List<OpenMeteoClient.GeocodingResult> suggest(String query, int limit) {
+        if (query == null || query.trim().length() < 2) return List.of();
+        return openMeteoClient.geocodeSuggestions(query, limit);
+    }
+
+    /**
      * Updates a saved location and returns the result.
      *
      * If a new cityName is provided without coordinates, the city is geocoded

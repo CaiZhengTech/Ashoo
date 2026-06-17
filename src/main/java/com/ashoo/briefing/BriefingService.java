@@ -9,6 +9,7 @@ import org.springframework.stereotype.Service;
 
 import java.time.Instant;
 import java.time.ZoneOffset;
+import java.util.List;
 import java.util.Optional;
 
 /**
@@ -111,26 +112,57 @@ public class BriefingService {
         StringBuilder sb = new StringBuilder();
         sb.append("Today in ").append(c.location())
                 .append(", your personal risk index is around ").append(c.riskScore())
-                .append("/100 (").append(c.riskLabel()).append(").");
+                .append("/100 (").append(c.riskLabel()).append("). ");
 
-        if (!c.topFactors().isEmpty()) {
+        // Lead with what's actually driving it: factors above the user's learned thresholds
+        // are the ones that have historically preceded their symptom days.
+        List<BriefingContext.TopFactor> elevated = c.topFactors().stream()
+                .filter(BriefingContext.TopFactor::abovePersonalThreshold)
+                .limit(3)
+                .toList();
+
+        if (!elevated.isEmpty()) {
+            String names = joinNames(elevated);
+            sb.append(names).append(elevated.size() == 1 ? " is" : " are")
+                    .append(" running above the level that has preceded your symptom days before");
+            BriefingContext.TopFactor lead = elevated.getFirst();
+            sb.append(" (").append(lead.name().toLowerCase())
+                    .append(" near the ").append((int) Math.round(lead.percentile()))
+                    .append("th percentile of your own history). ");
+        } else if (!c.topFactors().isEmpty()) {
             BriefingContext.TopFactor top = c.topFactors().getFirst();
-            sb.append(" ").append(top.name())
-                    .append(" is near the ").append((int) Math.round(top.percentile()))
-                    .append("th percentile of what you've seen historically");
-            if (top.abovePersonalThreshold()) {
-                sb.append(", similar to conditions on some of your past symptom days");
-            }
-            sb.append(".");
+            sb.append("Nothing is crossing your personal thresholds right now, ")
+                    .append(top.name().toLowerCase())
+                    .append(" is the most notable factor at the ")
+                    .append((int) Math.round(top.percentile()))
+                    .append("th percentile of what you've seen. ");
+        }
+
+        // Connect to how they've actually been feeling lately.
+        long recent = c.recentSymptomDays() == null ? 0
+                : c.recentSymptomDays().stream().filter(s -> s.severity() >= 1).count();
+        if (recent > 0) {
+            sb.append("You've logged ").append(recent)
+                    .append(recent == 1 ? " symptom day" : " symptom days")
+                    .append(" in the past week, so it may be worth staying aware. ");
         }
 
         if ("LOW".equals(c.confidence())) {
-            sb.append(" You're still early — keep logging for better insights.");
+            sb.append("You're still early, so keep logging for sharper, more personal insights.");
         } else {
-            sb.append(" This reflects patterns from ").append(c.symptomDaysAvailable())
+            sb.append("This reflects patterns learned from ").append(c.symptomDaysAvailable())
                     .append(" of your logged symptom days.");
         }
-        return sb.toString();
+        return sb.toString().trim();
+    }
+
+    /** Joins factor display names into a readable list ("A, B and C"). */
+    private static String joinNames(List<BriefingContext.TopFactor> factors) {
+        List<String> names = factors.stream().map(BriefingContext.TopFactor::name).toList();
+        if (names.size() == 1) return names.getFirst();
+        if (names.size() == 2) return names.get(0) + " and " + names.get(1);
+        return String.join(", ", names.subList(0, names.size() - 1))
+                + " and " + names.getLast();
     }
 
     private void persist(String userId, BriefingContext context, String text,

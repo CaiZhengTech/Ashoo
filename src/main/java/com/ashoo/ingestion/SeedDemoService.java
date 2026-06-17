@@ -2,6 +2,7 @@ package com.ashoo.ingestion;
 
 import com.ashoo.storage.entity.EnvironmentalSnapshot;
 import com.ashoo.storage.entity.SymptomLog;
+import com.ashoo.storage.repository.BriefingLogRepository;
 import com.ashoo.storage.repository.EnvironmentalSnapshotRepository;
 import com.ashoo.storage.repository.SymptomLogRepository;
 import org.slf4j.Logger;
@@ -37,6 +38,18 @@ public class SeedDemoService {
     private static final double AMSTERDAM_LON = 4.9041;
     private static final String AMSTERDAM_CITY = "Amsterdam, Netherlands";
 
+    /**
+     * The single default user the whole V1 app reads from (dashboard, risk, briefing).
+     * Demo seeding also populates THIS user so that, after seeding, the live dashboard
+     * and Insights light up immediately — otherwise the persona data lives under
+     * separate {@code demo-*} ids the read endpoints never touch.
+     */
+    private static final String DEFAULT_USER = "ashoo-user";
+
+    /** Which persona's trigger profile to project onto the default user. "morgan" is the
+     *  high-sensitivity profile, which yields the richest correlations and mismatch days. */
+    private static final String DEFAULT_USER_PROFILE = "morgan";
+
     private static final Map<String, String> PERSONA_DESCRIPTIONS = Map.of(
             "alex",   "Low sensitivity — symptoms only under strict multi-trigger conditions",
             "jordan", "Moderate sensitivity — clear seasonal patterns",
@@ -46,13 +59,16 @@ public class SeedDemoService {
     private final IngestionService ingestionService;
     private final EnvironmentalSnapshotRepository snapshotRepo;
     private final SymptomLogRepository symptomRepo;
+    private final BriefingLogRepository briefingLogRepo;
 
     public SeedDemoService(IngestionService ingestionService,
                             EnvironmentalSnapshotRepository snapshotRepo,
-                            SymptomLogRepository symptomRepo) {
+                            SymptomLogRepository symptomRepo,
+                            BriefingLogRepository briefingLogRepo) {
         this.ingestionService = ingestionService;
         this.snapshotRepo = snapshotRepo;
         this.symptomRepo = symptomRepo;
+        this.briefingLogRepo = briefingLogRepo;
     }
 
     /**
@@ -80,29 +96,57 @@ public class SeedDemoService {
                 startDate.atStartOfDay(ZoneOffset.UTC).toInstant(),
                 endDate.plusDays(1).atStartOfDay(ZoneOffset.UTC).toInstant());
 
-        Map<String, Integer> results = Map.of(
-                "alex",   seedPersona("alex",   snapshots),
-                "jordan", seedPersona("jordan", snapshots),
-                "morgan", seedPersona("morgan", snapshots)
-        );
+        // Seed the three browseable personas under their own ids...
+        Map<String, Integer> results = new java.util.LinkedHashMap<>();
+        results.put("alex",   seedFor("demo-alex",   "alex",   snapshots));
+        results.put("jordan", seedFor("demo-jordan", "jordan", snapshots));
+        results.put("morgan", seedFor("demo-morgan", "morgan", snapshots));
+
+        // ...and ALSO project one profile onto the default user so the live dashboard,
+        // risk score, briefing, and Insights have data the moment seeding finishes.
+        results.put(DEFAULT_USER, seedFor(DEFAULT_USER, DEFAULT_USER_PROFILE, snapshots));
+
+        // Drop any same-day cached briefings (default user + personas) so each regenerates
+        // against the freshly seeded numbers instead of serving a stale pre-seed briefing.
+        briefingLogRepo.deleteByUserId(DEFAULT_USER);
+        briefingLogRepo.deleteByUserId("demo-alex");
+        briefingLogRepo.deleteByUserId("demo-jordan");
+        briefingLogRepo.deleteByUserId("demo-morgan");
 
         log.info("Demo seeding complete: {}", results);
         return results;
     }
 
     /**
-     * Seeds one persona with synthetic symptom logs derived from the real environmental data.
-     *
-     * Each persona has a different trigger rule applied to the same environmental history,
-     * producing different symptom patterns. The rules reflect the CLAUDE.md persona specs.
+     * Backwards-compatible entry point that seeds a persona under its conventional
+     * {@code demo-<persona>} id. Retained so existing callers/tests keep working.
      *
      * @param persona   "alex", "jordan", or "morgan"
      * @param snapshots the real environmental snapshots to correlate against
      * @return number of symptom log rows inserted
      */
     public int seedPersona(String persona, List<EnvironmentalSnapshot> snapshots) {
-        String userId = "demo-" + persona;
-        Random rng = new Random(persona.hashCode());
+        return seedFor("demo-" + persona, persona, snapshots);
+    }
+
+    /**
+     * Seeds synthetic symptom logs for a given user id using a chosen persona's trigger rules.
+     *
+     * Separating the user id from the persona lets us reuse one trigger profile for both a
+     * browseable {@code demo-*} persona AND the default user — the only difference is which
+     * id the rows are written under. The rules reflect the CLAUDE.md persona specs.
+     *
+     * @param userId    the user id to write logs under (e.g. "demo-morgan" or "ashoo-user")
+     * @param persona   which trigger profile to apply: "alex", "jordan", or "morgan"
+     * @param snapshots the real environmental snapshots to correlate against
+     * @return number of symptom log rows inserted
+     */
+    public int seedFor(String userId, String persona, List<EnvironmentalSnapshot> snapshots) {
+        Random rng = new Random((userId + persona).hashCode());
+
+        // Clear any prior synthetic logs for this user so re-seeding is idempotent
+        // (never touches REAL user entries).
+        symptomRepo.deleteSyntheticByUserId(userId);
 
         List<SymptomLog> logs = new ArrayList<>();
 
@@ -140,48 +184,54 @@ public class SeedDemoService {
     }
 
     /**
-     * Computes a synthetic severity score (0–10) for a given persona and environmental reading.
+     * Computes a synthetic severity score (0-10) for a given persona and environmental reading.
      *
-     * Rules from CLAUDE.md:
-     * - Alex (low):    pm25 > 25 AND humidity > 70% simultaneously. Severity capped at 4.
-     * - Jordan (mod):  pm25 > 18 OR pollen_grass > 30. Severity 3–7. Seasonal pattern.
-     * - Morgan (high): pm25 > 12 OR pollen > 15 OR humidity > 60%. Severity 7–10 often.
+     * The three personas are deliberately driven by DIFFERENT factors at DIFFERENT
+     * frequencies, so their learned fingerprints, symptom counts, confidence levels, and
+     * trend shapes look clearly distinct rather than blurring together:
      *
-     * Small random noise is added so consecutive days are not identical.
+     * - Alex (low sensitivity): only genuinely poor air bothers him, and only mildly.
+     *   Single driver = PM2.5. Rare days, severity 1-3 (stays LOW confidence).
+     * - Jordan (moderate): a classic pollen sufferer with a seasonal pattern. Single
+     *   driver = grass/birch pollen. Regular days in season, severity 3-6.
+     * - Morgan (high sensitivity): reacts to many things at low levels, often badly.
+     *   Multi-driver = PM2.5 OR pollen OR humidity OR a pressure drop. Frequent, severe 6-10.
+     *
+     * Small random noise keeps consecutive days from being identical.
      *
      * @param persona the persona name
      * @param env     the environmental snapshot for this day
      * @param rng     seeded random for reproducibility across calls
-     * @return severity 0–10 (0 = no symptoms)
+     * @return severity 0-10 (0 = no symptoms)
      */
     int computeSeverity(String persona, EnvironmentalSnapshot env, Random rng) {
-        double pm25      = env.getPm25()      != null ? env.getPm25()      : 0;
-        double humidity  = env.getHumidityPct() != null ? env.getHumidityPct() : 0;
-        double grass     = env.getPollenGrass() != null ? env.getPollenGrass() : 0;
-        double pollen    = Math.max(grass, env.getPollenBirch() != null ? env.getPollenBirch() : 0);
+        double pm25     = env.getPm25() != null ? env.getPm25() : 0;
+        double humidity = env.getHumidityPct() != null ? env.getHumidityPct() : 0;
+        double grass    = env.getPollenGrass() != null ? env.getPollenGrass() : 0;
+        double birch    = env.getPollenBirch() != null ? env.getPollenBirch() : 0;
+        double pollen   = Math.max(grass, birch);
+        double pressureDrop = env.getPressureDrop3h() != null ? env.getPressureDrop3h() : 0;
 
         return switch (persona) {
             case "alex" -> {
-                // Strict AND — both conditions must be met
-                if (pm25 > 25 && humidity > 70) {
-                    yield Math.min(4, 1 + rng.nextInt(4));
-                }
+                // Pollution only, and only when it's genuinely poor. Rare and mild,
+                // so he stays at LOW confidence (the "keep logging" story).
+                if (pm25 > 26) yield 1 + rng.nextInt(3); // 1-3
                 yield 0;
             }
             case "jordan" -> {
-                // OR condition with seasonal pollen weight
-                boolean triggered = pm25 > 18 || grass > 30;
-                if (!triggered) yield 0;
-                yield 3 + rng.nextInt(5); // 3–7
+                // Pollen driven, seasonal. Regular moderate days when pollen is up.
+                if (pollen > 12) yield 3 + rng.nextInt(4); // 3-6
+                yield 0;
             }
             case "morgan" -> {
-                // Very sensitive — multiple low-level triggers
-                boolean triggered = pm25 > 12 || pollen > 15 || humidity > 60;
+                // Sensitive across several factors, but NOT every single day, so the
+                // engine still has good days to contrast against and learns clear,
+                // low personal thresholds (which is what makes his risk read high).
+                boolean triggered = pm25 > 11 || pollen > 8 || pressureDrop > 3;
                 if (!triggered) yield 0;
-                // Frequently severe
-                int base = 5 + rng.nextInt(5); // 5–9
-                // Occasionally extreme
-                yield rng.nextInt(10) == 0 ? 10 : base;
+                int base = 6 + rng.nextInt(4); // 6-9
+                yield rng.nextInt(8) == 0 ? 10 : base; // occasional 10
             }
             default -> 0;
         };
@@ -189,9 +239,9 @@ public class SeedDemoService {
 
     private String buildNote(String persona, int severity) {
         return switch (persona) {
-            case "alex"   -> severity >= 3 ? "Noticeable tightness today" : "Mild scratchy throat";
-            case "jordan" -> severity >= 6 ? "Bad allergy day — sneezing nonstop" : "Eyes itchy, runny nose";
-            case "morgan" -> severity >= 8 ? "Severe episode — had to use rescue inhaler"
+            case "alex"   -> severity >= 3 ? "Noticeable tightness on a hazy day" : "Mild scratchy throat";
+            case "jordan" -> severity >= 6 ? "Rough pollen day, sneezing nonstop" : "Itchy eyes, runny nose";
+            case "morgan" -> severity >= 8 ? "Severe episode, needed my rescue inhaler"
                                            : "Significant symptoms, hard to be outside";
             default -> "Symptoms noted";
         };

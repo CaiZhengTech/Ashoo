@@ -24,7 +24,7 @@ public class ConsentService {
     public static final String CONSENT_DISCLAIMER =
             "I understand Ashoo is an informational wellness tool, not a medical device. "
             + "It does not diagnose, treat, or prescribe, and its reminders are my own notes "
-            + "echoed back to me — not medical advice. I will always carry my prescribed "
+            + "echoed back to me, not medical advice. I will always carry my prescribed "
             + "medication and consult my doctor for medical decisions.";
 
     private final ConsentRecordRepository consentRepo;
