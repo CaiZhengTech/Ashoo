@@ -1,0 +1,10 @@
+# Keep the build context small and avoid copying host build artifacts into the image.
+build/
+.gradle/
+bin/
+.git/
+.github/
+.vscode/
+.idea/
+*.iml
+node_modules/

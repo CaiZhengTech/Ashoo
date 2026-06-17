@@ -1,0 +1,36 @@
+# Fly.io deployment configuration for the Ashoo backend.
+# Deploy with:  fly launch --no-deploy   (first time, to create the app)
+#               fly deploy               (build the Dockerfile and ship it)
+#
+# Database: provision a Postgres/TimescaleDB and set the connection as secrets
+# (see README "Deploying to Fly.io"). Secrets are NOT stored in this file.
+
+app = "ashoo"
+primary_region = "bos"   # Boston — closest to the Sharon, MA default location
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  # Non-secret runtime config. DB_* and API keys are injected via `fly secrets set`.
+  SERVER_PORT = "8080"
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  # Scale to zero when idle to stay within the ~$2–5/mo target, and wake on request.
+  auto_stop_machines = "stop"
+  auto_start_machines = true
+  min_machines_running = 0
+
+  # Spring Boot Actuator health endpoint — Fly uses this to gate traffic.
+  [[http_service.checks]]
+    interval = "30s"
+    timeout = "5s"
+    grace_period = "30s"
+    method = "GET"
+    path = "/actuator/health"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "512mb"
