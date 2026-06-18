@@ -25,9 +25,11 @@ import {
 } from '../components/ui';
 import ConditionsReadout from '../components/ConditionsReadout';
 import { formatRelative, daysAgoIso } from '../lib/format';
+import { useToast } from '../lib/ToastContext';
 
 function SavedLocations() {
   const qc = useQueryClient();
+  const toast = useToast();
   const locations = useQuery({ queryKey: ['locations'], queryFn: getLocations, retry: 0 });
   const [label, setLabel] = useState('');
   const [city, setCity] = useState('');
@@ -39,11 +41,15 @@ function SavedLocations() {
       setLabel('');
       setCity('');
       qc.invalidateQueries({ queryKey: ['locations'] });
+      toast('Place added');
     },
   });
   const del = useMutation({
     mutationFn: (id) => deleteLocation(id),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['locations'] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['locations'] });
+      toast('Place removed');
+    },
   });
   const makePrimary = useMutation({
     mutationFn: (loc) =>

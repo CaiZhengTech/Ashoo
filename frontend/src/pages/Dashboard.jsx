@@ -155,7 +155,7 @@ export default function Dashboard() {
     <div className="space-y-6">
       <DemoExplorer />
 
-      {/* Hero */}
+      {/* Hero + reminders grouped together */}
       {risk.isLoading ? (
         <HeroSkeleton />
       ) : notSetUp ? (
@@ -165,16 +165,22 @@ export default function Dashboard() {
           <ErrorState message={errorMessage(risk.error)} onRetry={() => risk.refetch()} />
         </Card>
       ) : (
-        <RiskHero data={risk.data} />
+        <div className="space-y-3">
+          <RiskHero data={risk.data} />
+          <CurrentReminders />
+        </div>
       )}
 
-      {/* Briefing + factor breakdown */}
-      <div className="grid gap-6 lg:grid-cols-5">
-        <div className="lg:col-span-3">
+      {/* Two independent column stacks so cards pack tightly with no cross-row white
+          space: the briefing sits directly above the trend chart on the left, and the
+          factor breakdown above reminders on the right. */}
+      <div className="grid items-start gap-6 lg:grid-cols-5">
+        <div className="flex flex-col gap-6 lg:col-span-3">
           <DailyBriefingCard />
+          <TrendCard />
         </div>
-        <div className="lg:col-span-2">
-          <Card className="card-pad h-full">
+        <div className="flex flex-col gap-6 lg:col-span-2">
+          <Card className="card-pad">
             <h2 className="mb-1 text-base font-semibold text-ink-800">What's driving it</h2>
             <p className="mb-4 text-xs text-ink-500">
               Each factor vs. {persona === 'you' ? 'your' : 'their'} own history, most influential
@@ -188,16 +194,6 @@ export default function Dashboard() {
               </p>
             )}
           </Card>
-        </div>
-      </div>
-
-      {/* Trend + reminders */}
-      <div className="grid gap-6 lg:grid-cols-5">
-        <div className="lg:col-span-3">
-          <TrendCard />
-        </div>
-        <div className="lg:col-span-2">
-          <CurrentReminders />
         </div>
       </div>
 

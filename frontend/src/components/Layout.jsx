@@ -33,18 +33,9 @@ function HealthPill() {
 
 function BrandMark() {
   return (
-    <NavLink to="/" className="flex items-center gap-2.5">
-      <span className="grid h-9 w-9 place-items-center rounded-xl bg-gradient-to-br from-brand-400 to-brand-700 text-white shadow-sm">
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden>
-          <path d="M6 14c0-2.2 1.8-4 4-4s4-1.8 4-4" stroke="white" strokeWidth="2" strokeLinecap="round" />
-          <path d="M5 18c0-1.7 1.4-3 3.2-3s3.3 1.3 3.3 3" stroke="white" strokeWidth="2" strokeLinecap="round" opacity="0.7" />
-          <circle cx="16.5" cy="7.5" r="1.6" fill="white" />
-        </svg>
-      </span>
-      <span className="flex flex-col leading-none">
-        <span className="text-lg font-extrabold tracking-tight text-ink-800">Ashoo</span>
-        <span className="text-[11px] font-medium text-ink-500">allergy, shoo</span>
-      </span>
+    <NavLink to="/" className="flex flex-col leading-none">
+      <span className="text-xl font-extrabold tracking-tight text-brand-700">Ashoo</span>
+      <span className="text-[11px] font-medium text-ink-500">allergy, shoo</span>
     </NavLink>
   );
 }
@@ -84,7 +75,7 @@ export default function Layout({ children }) {
         <div className="border-b border-amber-200 bg-amber-50/80">
           <div className="mx-auto flex max-w-6xl items-center gap-2 px-4 py-2 text-xs font-medium text-amber-800 sm:px-6">
             <span aria-hidden>🧪</span>
-            Viewing <strong>{meta.name}</strong>, a seeded demo persona ({meta.blurb}). All figures
+            Viewing {meta.name} in {meta.location}, a seeded demo persona ({meta.blurb}). All figures
             are illustrative synthetic data.
           </div>
         </div>

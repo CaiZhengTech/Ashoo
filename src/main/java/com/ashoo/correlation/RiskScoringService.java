@@ -55,6 +55,52 @@ public class RiskScoringService {
         return aboveThreshold ? 60.0 + 0.40 * percentile : 0.35 * percentile;
     }
 
+    /** How the final score splits between trigger INTENSITY and trigger BREADTH. */
+    private static final double INTENSITY_WEIGHT = 0.5;
+    private static final double BREADTH_WEIGHT = 0.5;
+
+    /**
+     * Blends two views of personal risk into the raw 0-100 score.
+     *
+     * INTENSITY is the weighted average of how elevated the person's factors are
+     * (a single sharp trigger can drive this high). BREADTH is the ABSOLUTE number of
+     * the person's triggers that are above threshold at once. We use the count, not a
+     * fraction, on purpose: a narrowly sensitive person with one strong trigger has a
+     * tiny model where that trigger is most of it, so a fraction would read high and
+     * defeat the point. Counting active triggers makes a broadly sensitive profile
+     * (many triggers firing together) score above a single-trigger one, which is what
+     * "high sensitivity" should mean.
+     *
+     * @param scoreInputs          per-factor personalized inputs
+     * @param weights              per-factor weights
+     * @param meaningfulActiveCount active triggers that ALSO carry real weight (see below)
+     * @return the blended raw score (0-100)
+     */
+    private static double blendedRaw(Map<String, Double> scoreInputs, Map<String, Double> weights,
+                                     long meaningfulActiveCount) {
+        double intensity = RiskScorer.weightedMean(scoreInputs, weights);
+        // ~5-6 genuine triggers firing at once saturates the breadth signal at 100.
+        double breadth = Math.min(100.0, meaningfulActiveCount * 18.0);
+        return INTENSITY_WEIGHT * intensity + BREADTH_WEIGHT * breadth;
+    }
+
+    /**
+     * Counts active triggers that actually matter, that is, factors both above the
+     * person's threshold AND carrying at least an average share of the model's weight.
+     *
+     * This filters out the spurious "active" factors a sparse, focused model can throw
+     * off (low, near-meaningless thresholds on uncorrelated factors), so breadth
+     * reflects genuine multi-trigger sensitivity rather than statistical noise.
+     */
+    private static long meaningfulActive(List<FactorContribution> contributions) {
+        int n = contributions.size();
+        if (n == 0) return 0;
+        double avgWeight = 1.0 / n; // weights are normalized to sum to ~1
+        return contributions.stream()
+                .filter(c -> c.aboveThreshold() && c.weight() >= avgWeight)
+                .count();
+    }
+
     private final EnvironmentalSnapshotRepository snapshotRepo;
     private final CorrelationResultRepository correlationRepo;
     private final RiskScoreHistoryRepository riskHistoryRepo;
@@ -177,8 +223,8 @@ public class RiskScoringService {
         Double prevSmoothed = prior.map(RiskScoreHistory::getRiskScoreSmoothed).orElse(null);
         boolean prevAlert = prior.map(p -> Boolean.TRUE.equals(p.getAlertTriggered())).orElse(false);
 
-        RiskScoreResult result = riskScorer.computeScore(
-                scoreInputs, weights, prevSmoothed, prevAlert);
+        double raw = blendedRaw(scoreInputs, weights, meaningfulActive(contributions));
+        RiskScoreResult result = riskScorer.smoothAndClassify(raw, prevSmoothed, prevAlert);
 
         int symptomDays = symptomRepo.countSymptomDays(userId);
         ConfidenceLevel confidence = ConfidenceLevel.fromSymptomDays(symptomDays);
@@ -247,6 +293,7 @@ public class RiskScoringService {
             Map<String, Double> normalizedScores = new HashMap<>();
             Map<String, Double> scoreInputs = new HashMap<>();
             Map<String, Double> weights = new HashMap<>();
+            List<Double> activeWeights = new ArrayList<>();
             for (CorrelationResult row : model) {
                 Factor factor = Factor.fromKey(row.getFactorName());
                 if (factor == null) continue;
@@ -256,14 +303,19 @@ public class RiskScoringService {
                         normalizer.normalize(value, historyByFactor.getOrDefault(factor, List.of()));
                 boolean aboveThreshold = row.getPersonalThreshold() != null
                         && value >= row.getPersonalThreshold();
+                double w = row.getWeight() != null ? row.getWeight() : 0.0;
+                if (aboveThreshold) activeWeights.add(w);
                 normalizedScores.put(factor.getKey(), percentile);
                 scoreInputs.put(factor.getKey(), personalScoreInput(percentile, aboveThreshold));
-                weights.put(factor.getKey(), row.getWeight() != null ? row.getWeight() : 0.0);
+                weights.put(factor.getKey(), w);
             }
             if (normalizedScores.isEmpty()) continue;
 
-            RiskScoreResult result =
-                    riskScorer.computeScore(scoreInputs, weights, prevSmoothed, prevAlert);
+            // Count active triggers that carry at least an average share of weight.
+            double avgWeight = 1.0 / normalizedScores.size();
+            long meaningful = activeWeights.stream().filter(w -> w >= avgWeight).count();
+            double raw = blendedRaw(scoreInputs, weights, meaningful);
+            RiskScoreResult result = riskScorer.smoothAndClassify(raw, prevSmoothed, prevAlert);
 
             RiskScoreHistory rowToSave = new RiskScoreHistory();
             rowToSave.setScoredAt(day.atTime(12, 0).toInstant(ZoneOffset.UTC));

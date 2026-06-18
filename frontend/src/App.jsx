@@ -1,5 +1,6 @@
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { PersonaProvider } from './lib/PersonaContext';
+import { ToastProvider } from './lib/ToastContext';
 import Layout from './components/Layout';
 import IntroGate from './components/IntroGate';
 import Dashboard from './pages/Dashboard';
@@ -12,8 +13,9 @@ import NotFound from './pages/NotFound';
 export default function App() {
   return (
     <PersonaProvider>
-      <IntroGate />
-      <Layout>
+      <ToastProvider>
+        <IntroGate />
+        <Layout>
         <Routes>
           <Route path="/" element={<Dashboard />} />
           <Route path="/log" element={<LogPage />} />
@@ -24,7 +26,8 @@ export default function App() {
           <Route path="/places" element={<PlacesPage />} />
           <Route path="*" element={<NotFound />} />
         </Routes>
-      </Layout>
+        </Layout>
+      </ToastProvider>
     </PersonaProvider>
   );
 }

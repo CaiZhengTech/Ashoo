@@ -36,14 +36,17 @@ public class DemoController {
                 Map.of("persona", "alex",
                         "name", "Alex",
                         "sensitivity", "Low",
+                        "location", "Los Angeles, CA",
                         "description", "Only poor air quality (high PM2.5) bothers Alex, and only mildly. Rare symptom days, low confidence so far."),
                 Map.of("persona", "jordan",
                         "name", "Jordan",
                         "sensitivity", "Moderate",
+                        "location", "Atlanta, GA",
                         "description", "A classic pollen sufferer. Symptoms track grass and birch pollen with a clear seasonal pattern."),
                 Map.of("persona", "morgan",
                         "name", "Morgan",
                         "sensitivity", "High",
+                        "location", "Houston, TX",
                         "description", "Reacts to many things at once (pollen, PM2.5, humidity, pressure swings). Frequent, often severe days.")
         );
     }

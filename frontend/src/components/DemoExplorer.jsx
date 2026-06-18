@@ -1,6 +1,7 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { seedDemo, computeCorrelation } from '../api/endpoints';
 import { usePersona, PERSONAS } from '../lib/PersonaContext';
+import { useToast } from '../lib/ToastContext';
 import { errorMessage } from '../api/client';
 import { Card, Button, InfoTip } from './ui';
 
@@ -15,6 +16,7 @@ import { Card, Button, InfoTip } from './ui';
  */
 export default function DemoExplorer() {
   const qc = useQueryClient();
+  const toast = useToast();
   const { persona, setPersona, userParam } = usePersona();
 
   const seed = useMutation({
@@ -22,7 +24,10 @@ export default function DemoExplorer() {
       // Seeding already computes every persona server-side; just refresh the views.
       return seedDemo();
     },
-    onSuccess: () => qc.invalidateQueries(),
+    onSuccess: () => {
+      qc.invalidateQueries();
+      toast('Demo data refreshed for all personas');
+    },
   });
 
   const recompute = useMutation({
@@ -31,6 +36,7 @@ export default function DemoExplorer() {
       qc.invalidateQueries({ queryKey: ['risk'] });
       qc.invalidateQueries({ queryKey: ['correlation'] });
       qc.invalidateQueries({ queryKey: ['briefing'] });
+      toast('Model recomputed');
     },
   });
 

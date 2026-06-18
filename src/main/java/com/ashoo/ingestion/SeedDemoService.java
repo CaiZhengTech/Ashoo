@@ -38,6 +38,13 @@ public class SeedDemoService {
     private static final double AMSTERDAM_LON = 4.9041;
     private static final String AMSTERDAM_CITY = "Amsterdam, Netherlands";
 
+    /** Display cities per persona — cosmetic only, env data is shared from Amsterdam. */
+    private static final Map<String, String> PERSONA_CITIES = Map.of(
+            "alex",   "Los Angeles, CA",
+            "jordan", "Atlanta, GA",
+            "morgan", "Houston, TX"
+    );
+
     /**
      * The single default user the whole V1 app reads from (dashboard, risk, briefing).
      * Demo seeding also populates THIS user so that, after seeding, the live dashboard
@@ -148,6 +155,11 @@ public class SeedDemoService {
         // (never touches REAL user entries).
         symptomRepo.deleteSyntheticByUserId(userId);
 
+        // Default user's logs show Sharon, MA; personas get their own display city.
+        String cityName = DEFAULT_USER.equals(userId)
+                ? "Sharon, MA"
+                : PERSONA_CITIES.getOrDefault(persona, AMSTERDAM_CITY);
+
         List<SymptomLog> logs = new ArrayList<>();
 
         // Group snapshots by day and pick the max reading for that day
@@ -168,7 +180,7 @@ public class SeedDemoService {
                 sl.setUserId(userId);
                 sl.setLoggedAt(day.atTime(8, 0).toInstant(ZoneOffset.UTC));
                 sl.setSeverity(severity);
-                sl.setCityName(AMSTERDAM_CITY);
+                sl.setCityName(cityName);
                 sl.setNotes(buildNote(persona, severity));
                 sl.setDataOrigin("SEEDED_SYNTHETIC");
                 logs.add(sl);

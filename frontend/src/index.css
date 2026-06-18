@@ -13,11 +13,11 @@
     /* Calming sage-green canvas. A soft, low-saturation wash of sage that is restful
        on the eyes, with the faintest warm and cool sage variations so it feels organic
        rather than flat. White cards float cleanly on top and text stays crisp. */
-    background-color: #eef2e8;
+    background-color: #dfe8d0;
     background-image:
-      radial-gradient(900px 520px at 8% -8%, rgba(150, 178, 138, 0.30), transparent 62%),
-      radial-gradient(820px 480px at 96% 2%, rgba(176, 198, 160, 0.24), transparent 58%),
-      radial-gradient(1000px 720px at 50% 110%, rgba(196, 208, 176, 0.22), transparent 62%);
+      radial-gradient(900px 520px at 8% -8%, rgba(130, 164, 108, 0.55), transparent 60%),
+      radial-gradient(820px 480px at 96% 2%, rgba(150, 180, 124, 0.48), transparent 58%),
+      radial-gradient(1000px 720px at 50% 112%, rgba(168, 192, 138, 0.46), transparent 62%);
     background-attachment: fixed;
     min-height: 100vh;
   }

@@ -29,6 +29,7 @@ import {
   severityLabel,
   severityColor,
 } from '../lib/format';
+import { useToast } from '../lib/ToastContext';
 
 /** A local datetime-input value (yyyy-MM-ddThh:mm) for a Date, in local time. */
 function toLocalInput(date) {
@@ -54,12 +55,22 @@ function SymptomForm({ locations, medications, editing, onDone, onCancel }) {
   const [locationId, setLocationId] = useState(editing?.locationId ?? '');
   const [cityName, setCityName] = useState(editing?.cityName ?? '');
   const [meds, setMeds] = useState(editing?.medicationsUsed?.map(String) ?? []);
+  // Which quick-time chip is active (for highlight); null once a custom time is set.
+  const [whenPreset, setWhenPreset] = useState(editing ? null : 'Now');
 
+  const WHEN_PRESETS = [
+    { label: 'Now', at: () => new Date() },
+    { label: 'This morning', at: () => { const d = new Date(); d.setHours(8, 0, 0, 0); return d; } },
+    { label: 'Yesterday', at: () => { const d = new Date(); d.setDate(d.getDate() - 1); d.setHours(8, 0, 0, 0); return d; } },
+  ];
+
+  const toast = useToast();
   const mutation = useMutation({
     mutationFn: (body) =>
       editing ? updateSymptom(editing.id, body) : createSymptom(body),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['symptoms'] });
+      toast(editing ? 'Entry updated' : 'Symptom entry saved');
       onDone?.();
     },
   });
@@ -90,62 +101,87 @@ function SymptomForm({ locations, medications, editing, onDone, onCancel }) {
         eyebrow={editing ? 'Editing entry' : 'New entry'}
         title={editing ? 'Update how you felt' : 'How did you feel?'}
       />
-      <form onSubmit={submit} className="space-y-4">
-        <div className="grid gap-4 sm:grid-cols-2">
-          <Field label="When">
-            <div className="mb-2 flex gap-1.5">
-              {[
-                { label: 'Now', at: () => new Date() },
-                { label: 'This morning', at: () => { const d = new Date(); d.setHours(8, 0, 0, 0); return d; } },
-                { label: 'Yesterday', at: () => { const d = new Date(); d.setDate(d.getDate() - 1); d.setHours(8, 0, 0, 0); return d; } },
-              ].map((q) => (
-                <button
-                  key={q.label}
-                  type="button"
-                  onClick={() => setLoggedAt(toLocalInput(q.at()))}
-                  className="rounded-full border border-ink-200 bg-white px-2.5 py-1 text-xs font-medium text-ink-600 transition-colors hover:border-brand-300 hover:bg-brand-50 hover:text-brand-700"
-                >
-                  {q.label}
-                </button>
-              ))}
+      <form onSubmit={submit} className="space-y-5">
+        {/* Severity, the most important field, shown as a clear visual indicator. */}
+        <div>
+          <div className="mb-2 flex items-center gap-3">
+            <span
+              className={`grid h-12 w-12 shrink-0 place-items-center rounded-2xl text-lg font-extrabold ${severityColor(
+                Number(severity)
+              )}`}
+            >
+              {severity}
+            </span>
+            <div>
+              <div className="text-sm font-semibold text-ink-800">
+                {severityLabel(Number(severity))}
+              </div>
+              <div className="text-xs text-ink-500">How bad were your symptoms? Slide to set.</div>
             </div>
-            <Input
-              type="datetime-local"
-              value={loggedAt}
-              max={nowLocalInput()}
-              onChange={(e) => setLoggedAt(e.target.value)}
-              required
-            />
-          </Field>
-          <Field label="Location" hint="Pick a saved place or type a city for a one-off entry.">
-            <Select value={locationId} onChange={(e) => setLocationId(e.target.value)}>
-              <option value="">Type a city below</option>
-              {locations?.map((l) => (
-                <option key={l.id} value={l.id}>
-                  {l.label} ({l.cityName})
-                </option>
-              ))}
-            </Select>
-          </Field>
-        </div>
-
-        {!locationId && (
-          <Field label="City / town">
-            <Input
-              placeholder="e.g. Sharon, MA"
-              value={cityName}
-              onChange={(e) => setCityName(e.target.value)}
-            />
-          </Field>
-        )}
-
-        <Field label={`Severity, ${severity}/10 · ${severityLabel(Number(severity))}`}>
+          </div>
           <Slider min={0} max={10} value={severity} onChange={(e) => setSeverity(e.target.value)} />
           <div className="mt-1 flex justify-between text-[10px] text-ink-400">
             <span>0 · none</span>
             <span>5 · moderate</span>
             <span>10 · severe</span>
           </div>
+        </div>
+
+        {/* When, quick chips lead, with an exact picker tucked in the same group. */}
+        <Field label="When did this happen?">
+          <div className="flex flex-wrap items-center gap-2">
+            {WHEN_PRESETS.map((q) => {
+              const active = whenPreset === q.label;
+              return (
+                <button
+                  key={q.label}
+                  type="button"
+                  onClick={() => {
+                    setLoggedAt(toLocalInput(q.at()));
+                    setWhenPreset(q.label);
+                  }}
+                  className={`rounded-full border px-3 py-1.5 text-xs font-semibold transition-colors ${
+                    active
+                      ? 'border-brand-400 bg-brand-50 text-brand-700'
+                      : 'border-ink-200 bg-white text-ink-600 hover:border-brand-300 hover:bg-brand-50/60'
+                  }`}
+                >
+                  {q.label}
+                </button>
+              );
+            })}
+            <span className="text-xs text-ink-400">or</span>
+            <input
+              type="datetime-local"
+              value={loggedAt}
+              max={nowLocalInput()}
+              onChange={(e) => {
+                setLoggedAt(e.target.value);
+                setWhenPreset(null);
+              }}
+              required
+              className="flex-1 rounded-xl border border-ink-200 bg-white px-3 py-1.5 text-sm text-ink-800 transition-shadow focus:border-brand-400 focus:outline-none focus:ring-2 focus:ring-brand-200"
+            />
+          </div>
+        </Field>
+
+        <Field label="Where" hint="Only saved places have tracked conditions, so only those count toward your model.">
+          <Select value={locationId} onChange={(e) => setLocationId(e.target.value)}>
+            <option value="">Somewhere else (type a city)</option>
+            {locations?.map((l) => (
+              <option key={l.id} value={l.id}>
+                {l.label} ({l.cityName})
+              </option>
+            ))}
+          </Select>
+          {!locationId && (
+            <Input
+              className="mt-2"
+              placeholder="e.g. Sharon, MA"
+              value={cityName}
+              onChange={(e) => setCityName(e.target.value)}
+            />
+          )}
         </Field>
 
         <Field label="Notes" hint="Quick and free-form. Never shared with the AI briefing.">
@@ -201,9 +237,13 @@ function SymptomForm({ locations, medications, editing, onDone, onCancel }) {
 
 function HistoryRow({ entry, onEdit }) {
   const qc = useQueryClient();
+  const toast = useToast();
   const del = useMutation({
     mutationFn: () => deleteSymptom(entry.id),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['symptoms'] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['symptoms'] });
+      toast('Entry deleted');
+    },
   });
 
   return (

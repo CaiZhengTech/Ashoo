@@ -74,15 +74,15 @@ export function Field({ label, hint, children, htmlFor }) {
 const INPUT_CLS =
   'w-full rounded-xl border border-ink-200 bg-white px-3 py-2 text-sm text-ink-800 placeholder:text-ink-400 transition-shadow focus:border-brand-400 focus:ring-2 focus:ring-brand-200 focus:outline-none';
 
-export function Input(props) {
-  return <input className={INPUT_CLS} {...props} />;
+export function Input({ className = '', ...props }) {
+  return <input className={`${INPUT_CLS} ${className}`} {...props} />;
 }
-export function Textarea(props) {
-  return <textarea className={`${INPUT_CLS} min-h-[80px] resize-y`} {...props} />;
+export function Textarea({ className = '', ...props }) {
+  return <textarea className={`${INPUT_CLS} min-h-[80px] resize-y ${className}`} {...props} />;
 }
-export function Select({ children, ...props }) {
+export function Select({ className = '', children, ...props }) {
   return (
-    <select className={INPUT_CLS} {...props}>
+    <select className={`${INPUT_CLS} ${className}`} {...props}>
       {children}
     </select>
   );

@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 
 /**
  * Dreamy cloud intro screen shown before the platform.
@@ -32,7 +33,9 @@ export default function IntroGate() {
   const [done, setDone] = useState(() => sessionStorage.getItem(SESSION_KEY) === '1');
   const [leaving, setLeaving] = useState(false);
   const [gifFailed, setGifFailed] = useState(false);
+  const [mediaReady, setMediaReady] = useState(false);
   const videoRef = useRef(null);
+  const navigate = useNavigate();
 
   // Some browsers ignore the autoplay attribute but allow a programmatic play() on a
   // muted video. Kick it off explicitly and swallow the promise rejection (if it's
@@ -45,6 +48,8 @@ export default function IntroGate() {
   if (done) return null;
 
   function accessDemo() {
+    // Always enter on the dashboard, regardless of which route the page loaded on.
+    navigate('/');
     setLeaving(true);
     // Let the zoom/fade play before unmounting; keep it short for reduced motion.
     const delay = prefersReducedMotion ? 250 : 750;
@@ -71,16 +76,31 @@ export default function IntroGate() {
         leaving ? 'pointer-events-none' : ''
       }`}
     >
-      {/* Fallback sky gradient, always present so edges/transparency look good and
-          the screen is still pretty if the GIF is missing. */}
+      {/* Fallback sky, always present so the screen is calm and alive WHILE the video
+          buffers (and if it is missing entirely). Soft drifting cloud blobs make this
+          loading moment feel intentional rather than like lag. */}
       <div
-        className="absolute inset-0"
-        style={{
-          background:
-            'linear-gradient(180deg, #aacbe8 0%, #cfe0f0 38%, #eef2ee 100%)',
-        }}
+        className="absolute inset-0 overflow-hidden"
+        style={{ background: 'linear-gradient(180deg, #aacbe8 0%, #cfe0f0 38%, #eef2ee 100%)' }}
         aria-hidden
-      />
+      >
+        {!prefersReducedMotion && (
+          <>
+            <div
+              className="absolute h-72 w-72 rounded-full blur-3xl animate-cloud-drift"
+              style={{ top: '12%', left: '8%', background: 'radial-gradient(circle, rgba(255,255,255,0.85), transparent 70%)' }}
+            />
+            <div
+              className="absolute h-96 w-96 rounded-full blur-3xl animate-cloud-drift"
+              style={{ top: '40%', right: '6%', background: 'radial-gradient(circle, rgba(255,255,255,0.7), transparent 70%)', animationDelay: '-8s' }}
+            />
+            <div
+              className="absolute h-64 w-64 rounded-full blur-3xl animate-cloud-drift"
+              style={{ bottom: '8%', left: '32%', background: 'radial-gradient(circle, rgba(255,255,255,0.6), transparent 70%)', animationDelay: '-14s' }}
+            />
+          </>
+        )}
+      </div>
 
       {/* Cloud atmospheric layer (video or gif). object-cover fills the viewport
           without stretching; a slow drift adds life unless reduced motion is set.
@@ -94,20 +114,23 @@ export default function IntroGate() {
             loop
             muted
             playsInline
+            preload="auto"
+            onCanPlay={() => setMediaReady(true)}
             onError={() => setGifFailed(true)}
-            className={`absolute inset-0 h-full w-full object-cover ${
-              prefersReducedMotion ? '' : 'animate-cloud-drift'
-            }`}
+            className={`absolute inset-0 h-full w-full object-cover transition-opacity duration-700 ${
+              mediaReady ? 'opacity-100' : 'opacity-0'
+            } ${prefersReducedMotion ? '' : 'animate-cloud-drift'}`}
           />
         ) : (
           <img
             src={INTRO_MEDIA}
             alt=""
             aria-hidden
+            onLoad={() => setMediaReady(true)}
             onError={() => setGifFailed(true)}
-            className={`absolute inset-0 h-full w-full object-cover ${
-              prefersReducedMotion ? '' : 'animate-cloud-drift'
-            }`}
+            className={`absolute inset-0 h-full w-full object-cover transition-opacity duration-700 ${
+              mediaReady ? 'opacity-100' : 'opacity-0'
+            } ${prefersReducedMotion ? '' : 'animate-cloud-drift'}`}
           />
         ))}
 

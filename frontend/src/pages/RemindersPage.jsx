@@ -27,6 +27,7 @@ import {
   Slider,
 } from '../components/ui';
 import { MED_TYPES, medTypeLabel, num } from '../lib/format';
+import { useToast } from '../lib/ToastContext';
 
 // Mirrors ConsentService.CONSENT_DISCLAIMER on the backend so the user reads the
 // exact statement they are agreeing to, before the server records it.
@@ -80,17 +81,22 @@ function MedicationsCard() {
   const [type, setType] = useState('INHALER');
   const [notes, setNotes] = useState('');
 
+  const toast = useToast();
   const add = useMutation({
     mutationFn: () => addMedication({ name: name.trim(), type, notes: notes.trim() || null }),
     onSuccess: () => {
       setName('');
       setNotes('');
       qc.invalidateQueries({ queryKey: ['medications'] });
+      toast('Medication added');
     },
   });
   const del = useMutation({
     mutationFn: (id) => deleteMedication(id),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['medications'] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['medications'] });
+      toast('Medication removed');
+    },
   });
 
   const usageFor = (id) => usage.data?.find((u) => u.medicationId === id);
@@ -185,14 +191,14 @@ function MedicationsCard() {
 
 function ReminderRulesCard() {
   const qc = useQueryClient();
+  const toast = useToast();
   const rules = useQuery({ queryKey: ['reminder-rules'], queryFn: getReminderRules, retry: 0 });
   const meds = useQuery({ queryKey: ['medications'], queryFn: getMedications, retry: 0 });
 
   const [threshold, setThreshold] = useState(70);
   const [note, setNote] = useState('');
   const [medId, setMedId] = useState('');
-  const [start, setStart] = useState('08:00');
-  const [end, setEnd] = useState('20:00');
+  const [remindAt, setRemindAt] = useState('08:00');
 
   const add = useMutation({
     mutationFn: () =>
@@ -200,13 +206,14 @@ function ReminderRulesCard() {
         riskScoreThreshold: Number(threshold),
         userNote: note.trim(),
         medicationId: medId ? Number(medId) : null,
-        timeWindowStart: `${start}:00`,
-        timeWindowEnd: `${end}:00`,
+        timeWindowStart: `${remindAt}:00`,
+        timeWindowEnd: '23:59:00',
       }),
     onSuccess: () => {
       setNote('');
       qc.invalidateQueries({ queryKey: ['reminder-rules'] });
       qc.invalidateQueries({ queryKey: ['reminders', 'current'] });
+      toast('Reminder added');
     },
   });
   const del = useMutation({
@@ -214,6 +221,7 @@ function ReminderRulesCard() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['reminder-rules'] });
       qc.invalidateQueries({ queryKey: ['reminders', 'current'] });
+      toast('Reminder removed');
     },
   });
 
@@ -223,8 +231,8 @@ function ReminderRulesCard() {
     <Card className="card-pad">
       <SectionTitle eyebrow="When to nudge me" title="Reminder rules" />
       <p className="-mt-1 mb-4 text-sm text-ink-500">
-        “When my risk crosses X during these hours, show me my note.” Time-aware so nothing fires
-        at 3am unless you ask it to.
+        When my risk crosses X, remind me at this time. Time-aware so nothing fires at 3am
+        unless you ask it to.
       </p>
 
       {rules.isLoading ? (
@@ -241,10 +249,10 @@ function ReminderRulesCard() {
               className="flex items-start justify-between gap-3 rounded-xl border border-ink-200 bg-white p-3"
             >
               <div>
-                <p className="text-sm font-medium text-ink-800">“{r.userNote}”</p>
+                <p className="text-sm font-medium text-ink-800">&ldquo;{r.userNote}&rdquo;</p>
                 <p className="mt-0.5 text-xs text-ink-500">
-                  PRI ≥ {Math.round(r.riskScoreThreshold)} · {medName(r.medicationId)} ·{' '}
-                  {String(r.timeWindowStart).slice(0, 5)}-{String(r.timeWindowEnd).slice(0, 5)}
+                  PRI ≥ {Math.round(r.riskScoreThreshold)} · {medName(r.medicationId)} · remind at{' '}
+                  {String(r.timeWindowStart).slice(0, 5)}
                 </p>
               </div>
               <button
@@ -281,7 +289,7 @@ function ReminderRulesCard() {
             required
           />
         </Field>
-        <div className="grid gap-3 sm:grid-cols-3">
+        <div className="grid gap-3 sm:grid-cols-2">
           <Field label="Medication">
             <Select value={medId} onChange={(e) => setMedId(e.target.value)}>
               <option value="">No medication</option>
@@ -292,11 +300,8 @@ function ReminderRulesCard() {
               ))}
             </Select>
           </Field>
-          <Field label="From">
-            <Input type="time" value={start} onChange={(e) => setStart(e.target.value)} />
-          </Field>
-          <Field label="To">
-            <Input type="time" value={end} onChange={(e) => setEnd(e.target.value)} />
+          <Field label="Remind me at" hint="Earliest time to show this reminder">
+            <Input type="time" value={remindAt} onChange={(e) => setRemindAt(e.target.value)} />
           </Field>
         </div>
         {add.isError && <p className="text-sm text-red-600">{errorMessage(add.error)}</p>}
@@ -310,10 +315,14 @@ function ReminderRulesCard() {
 
 export default function RemindersPage() {
   const qc = useQueryClient();
+  const toast = useToast();
   const consent = useQuery({ queryKey: ['consent'], queryFn: getConsent, retry: 0 });
   const accept = useMutation({
     mutationFn: acceptConsent,
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['consent'] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['consent'] });
+      toast('Reminders enabled');
+    },
   });
 
   return (
