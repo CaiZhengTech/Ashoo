@@ -1,6 +1,6 @@
 # Ashoo - Personal Environmental Health Correlation Engine
 
-> *"What does the air do to **me** specifically — not to the average person?"*
+> *"What does the air do to **me** specifically, not to the average person?"*
 
 Ashoo is a personal environmental health correlation engine for people with respiratory
 allergies and asthma. Apps like AirNow give population-average AQI thresholds. Ashoo
