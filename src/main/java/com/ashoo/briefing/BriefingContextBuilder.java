@@ -64,8 +64,10 @@ public class BriefingContextBuilder {
      * @return a fully populated, privacy-safe context ready to serialize into the prompt
      */
     public BriefingContext buildContext(String userId) {
+        // Environmental data lives under the shared env user in V1, so a persona's
+        // briefing must score against that — not against its own (empty) env history.
         Optional<RiskScoreBreakdown> breakdownOpt =
-                riskScoringService.currentBreakdown(userId, userId);
+                riskScoringService.currentBreakdown(userId, com.ashoo.common.DemoUsers.ENV_USER);
 
         int riskScore;
         String riskLabel;

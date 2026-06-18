@@ -103,7 +103,8 @@ public class CorrelationService {
         Instant from = to.minus(Duration.ofDays(LOOKBACK_DAYS));
 
         List<EnvironmentalSnapshot> snapshots = snapshotRepo.findByDateRange(envUserId, from, to);
-        List<SymptomLog> symptoms = symptomRepo.findByDateRange(symptomUserId, from, to);
+        List<SymptomLog> symptoms = filterToTrackedLocation(
+                symptomRepo.findByDateRange(symptomUserId, from, to), snapshots);
 
         Map<Factor, Map<LocalDate, Double>> dailyFactors = aggregateDaily(snapshots);
         Map<LocalDate, Integer> severityByDay = maxSeverityByDay(symptoms);
@@ -187,7 +188,8 @@ public class CorrelationService {
         Instant from = to.minus(Duration.ofDays(LOOKBACK_DAYS));
 
         List<EnvironmentalSnapshot> snapshots = snapshotRepo.findByDateRange(envUserId, from, to);
-        List<SymptomLog> symptoms = symptomRepo.findByDateRange(symptomUserId, from, to);
+        List<SymptomLog> symptoms = filterToTrackedLocation(
+                symptomRepo.findByDateRange(symptomUserId, from, to), snapshots);
 
         Map<Factor, Map<LocalDate, Double>> dailyFactors = aggregateDaily(snapshots);
         Map<LocalDate, Integer> severityByDay = maxSeverityByDay(symptoms);
@@ -200,6 +202,46 @@ public class CorrelationService {
 
         Map<LocalDate, Double> reconstructed = reconstructDailyScores(dailyFactors, weightByKey, envDays);
         return mismatchDetector.detect(reconstructed, severityByDay);
+    }
+
+    /**
+     * Keeps only symptom days that belong to a location we actually have conditions for.
+     *
+     * The engine correlates symptom days against the environmental history of ONE tracked
+     * location. A day logged somewhere we have no data for (e.g. a trip to a city the user
+     * never saved) has nothing meaningful to correlate against, so counting it would dilute
+     * the model with noise. We therefore drop logs whose city does not match the tracked
+     * conditions. Entries with no city are kept — they default to the tracked location and
+     * predate this rule, so excluding them would silently discard existing data.
+     *
+     * Matching is normalized (lower-cased, compared on the part before the first comma) so
+     * "Amsterdam" lines up with "Amsterdam, Netherlands" despite formatting differences.
+     *
+     * @param symptoms  the candidate symptom logs
+     * @param snapshots the environmental snapshots whose location defines "tracked"
+     * @return the subset of symptoms that count toward the model
+     */
+    private List<SymptomLog> filterToTrackedLocation(List<SymptomLog> symptoms,
+                                                     List<EnvironmentalSnapshot> snapshots) {
+        java.util.Set<String> trackedPlaces = snapshots.stream()
+                .map(EnvironmentalSnapshot::getCityName)
+                .filter(java.util.Objects::nonNull)
+                .map(CorrelationService::normalizePlace)
+                .collect(java.util.stream.Collectors.toSet());
+
+        // With no known location we cannot filter meaningfully, so leave the data untouched.
+        if (trackedPlaces.isEmpty()) return symptoms;
+
+        return symptoms.stream()
+                .filter(s -> s.getCityName() == null
+                        || trackedPlaces.contains(normalizePlace(s.getCityName())))
+                .toList();
+    }
+
+    /** Normalizes a place name for tolerant comparison: lower-cased, first comma-segment. */
+    private static String normalizePlace(String city) {
+        String first = city.split(",", 2)[0];
+        return first.trim().toLowerCase();
     }
 
     // ── Per-factor statistics ────────────────────────────────────────────────

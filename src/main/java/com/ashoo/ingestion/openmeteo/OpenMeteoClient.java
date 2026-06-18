@@ -116,13 +116,26 @@ public class OpenMeteoClient {
     /**
      * Geocodes a city name to coordinates using Open-Meteo's geocoding API.
      *
-     * @param cityName the city to look up (e.g., "Amsterdam")
+     * Open-Meteo's geocoder matches on the city name alone — it returns no results for
+     * a combined "City, ST" string, which is exactly what users naturally type (and what
+     * our placeholder suggests). So we split on the comma, search by the city part, then
+     * disambiguate among candidates by matching the region hint against each result's
+     * {@code admin1} (state/province). This both fixes the outright failure and picks the
+     * RIGHT "Sharon" — there are dozens, and without the state we'd grab an arbitrary one.
+     *
+     * @param query the user's input, e.g. "Amsterdam", "Sharon, MA", or "Paris, France"
      * @return lat/lon and resolved name, or empty if not found
      */
-    public Optional<GeocodingResult> geocode(String cityName) {
+    public Optional<GeocodingResult> geocode(String query) {
+        if (query == null || query.isBlank()) return Optional.empty();
+
+        String[] parts = query.split(",", 2);
+        String cityPart = parts[0].trim();
+        String regionHint = parts.length > 1 ? parts[1].trim() : null;
+
         try {
             GeocodingResponse response = geocodingClient.get()
-                    .uri("/v1/search?name={name}&count=1&language=en", cityName)
+                    .uri("/v1/search?name={name}&count=10&language=en", cityPart)
                     .retrieve()
                     .body(GeocodingResponse.class);
 
@@ -130,15 +143,102 @@ public class OpenMeteoClient {
                 return Optional.empty();
             }
 
-            var r = response.results().getFirst();
-            String displayName = r.name() + (r.country() != null ? ", " + r.country() : "");
-            return Optional.of(new GeocodingResult(r.latitude(), r.longitude(), displayName));
+            var match = pickBestMatch(response.results(), regionHint);
+
+            StringBuilder display = new StringBuilder(match.name());
+            if (match.admin1() != null && !match.admin1().isBlank()) {
+                display.append(", ").append(match.admin1());
+            }
+            if (match.country() != null) {
+                display.append(", ").append(match.country());
+            }
+            return Optional.of(new GeocodingResult(match.latitude(), match.longitude(), display.toString()));
 
         } catch (RestClientException e) {
-            log.error("Geocoding failed for '{}': {}", cityName, e.getMessage());
+            log.error("Geocoding failed for '{}': {}", query, e.getMessage());
             return Optional.empty();
         }
     }
+
+    /**
+     * Returns up to {@code limit} place candidates for an autocomplete dropdown.
+     *
+     * The frontend search box calls this as the user types so they can pick the exact
+     * place (there are many "Sharon"s) rather than trusting a single best-guess match.
+     * Each candidate carries a display name with state/region and country for disambiguation.
+     *
+     * @param query the partial place name the user has typed
+     * @param limit max candidates to return
+     * @return matching places, most relevant first (empty on no match or error)
+     */
+    public List<GeocodingResult> geocodeSuggestions(String query, int limit) {
+        if (query == null || query.isBlank()) return List.of();
+        String cityPart = query.split(",", 2)[0].trim();
+        try {
+            GeocodingResponse response = geocodingClient.get()
+                    .uri("/v1/search?name={name}&count={count}&language=en", cityPart, limit)
+                    .retrieve()
+                    .body(GeocodingResponse.class);
+            if (response == null || response.results() == null) return List.of();
+            return response.results().stream().map(this::toResult).toList();
+        } catch (RestClientException e) {
+            log.error("Geocoding suggestions failed for '{}': {}", query, e.getMessage());
+            return List.of();
+        }
+    }
+
+    /** Builds a display-friendly result (name, region, country) from a raw candidate. */
+    private GeocodingResult toResult(GeocodingResponse.GeoResult r) {
+        StringBuilder display = new StringBuilder(r.name());
+        if (r.admin1() != null && !r.admin1().isBlank()) display.append(", ").append(r.admin1());
+        if (r.country() != null) display.append(", ").append(r.country());
+        return new GeocodingResult(r.latitude(), r.longitude(), display.toString());
+    }
+
+    /**
+     * Chooses the candidate that best matches an optional region hint.
+     *
+     * The hint is matched against {@code admin1} both directly (e.g. "Massachusetts")
+     * and via a US state-abbreviation expansion (e.g. "MA"). When no hint is given or
+     * nothing matches, we keep Open-Meteo's own top result, which is population-ranked.
+     */
+    private GeocodingResponse.GeoResult pickBestMatch(
+            List<GeocodingResponse.GeoResult> results, String regionHint) {
+        if (regionHint == null || regionHint.isBlank()) {
+            return results.getFirst();
+        }
+        String hint = regionHint.trim();
+        String expanded = US_STATES.getOrDefault(hint.toUpperCase(), hint);
+        for (var r : results) {
+            String admin1 = r.admin1();
+            if (admin1 == null) continue;
+            if (admin1.equalsIgnoreCase(hint) || admin1.equalsIgnoreCase(expanded)) {
+                return r;
+            }
+        }
+        return results.getFirst();
+    }
+
+    /** Minimal US state abbreviation → full name map, so "Sharon, MA" resolves correctly. */
+    private static final Map<String, String> US_STATES = Map.ofEntries(
+            Map.entry("AL", "Alabama"), Map.entry("AK", "Alaska"), Map.entry("AZ", "Arizona"),
+            Map.entry("AR", "Arkansas"), Map.entry("CA", "California"), Map.entry("CO", "Colorado"),
+            Map.entry("CT", "Connecticut"), Map.entry("DE", "Delaware"), Map.entry("FL", "Florida"),
+            Map.entry("GA", "Georgia"), Map.entry("HI", "Hawaii"), Map.entry("ID", "Idaho"),
+            Map.entry("IL", "Illinois"), Map.entry("IN", "Indiana"), Map.entry("IA", "Iowa"),
+            Map.entry("KS", "Kansas"), Map.entry("KY", "Kentucky"), Map.entry("LA", "Louisiana"),
+            Map.entry("ME", "Maine"), Map.entry("MD", "Maryland"), Map.entry("MA", "Massachusetts"),
+            Map.entry("MI", "Michigan"), Map.entry("MN", "Minnesota"), Map.entry("MS", "Mississippi"),
+            Map.entry("MO", "Missouri"), Map.entry("MT", "Montana"), Map.entry("NE", "Nebraska"),
+            Map.entry("NV", "Nevada"), Map.entry("NH", "New Hampshire"), Map.entry("NJ", "New Jersey"),
+            Map.entry("NM", "New Mexico"), Map.entry("NY", "New York"), Map.entry("NC", "North Carolina"),
+            Map.entry("ND", "North Dakota"), Map.entry("OH", "Ohio"), Map.entry("OK", "Oklahoma"),
+            Map.entry("OR", "Oregon"), Map.entry("PA", "Pennsylvania"), Map.entry("RI", "Rhode Island"),
+            Map.entry("SC", "South Carolina"), Map.entry("SD", "South Dakota"), Map.entry("TN", "Tennessee"),
+            Map.entry("TX", "Texas"), Map.entry("UT", "Utah"), Map.entry("VT", "Vermont"),
+            Map.entry("VA", "Virginia"), Map.entry("WA", "Washington"), Map.entry("WV", "West Virginia"),
+            Map.entry("WI", "Wisconsin"), Map.entry("WY", "Wyoming"), Map.entry("DC", "Washington, D.C.")
+    );
 
     /**
      * Fetches historical hourly data for a coordinate pair over a date range.
@@ -256,7 +356,8 @@ public class OpenMeteoClient {
     @JsonIgnoreProperties(ignoreUnknown = true)
     record GeocodingResponse(List<GeoResult> results) {
         @JsonIgnoreProperties(ignoreUnknown = true)
-        record GeoResult(String name, double latitude, double longitude, String country) {}
+        record GeoResult(String name, double latitude, double longitude,
+                         String country, String admin1) {}
     }
 
     /** Resolved geocoding result with display-friendly name. */

@@ -15,6 +15,8 @@ import org.springframework.stereotype.Service;
 
 import java.time.Duration;
 import java.time.Instant;
+import java.time.LocalDate;
+import java.time.ZoneOffset;
 import java.util.*;
 
 /**
@@ -33,6 +35,71 @@ public class RiskScoringService {
 
     /** Window of history used as the reference distribution for percentile normalization. */
     private static final int HISTORY_DAYS = 180;
+
+    /**
+     * Personalizes a factor's score input by its relationship to the person's threshold.
+     *
+     * Crossing THIS person's learned threshold means the reading resembles conditions that
+     * have preceded their symptoms, a strong personal-risk signal in its own right, so an
+     * above-threshold factor contributes high (60-100) regardless of its raw percentile.
+     * A below-threshold factor contributes low (0-35), scaled by how elevated it is. The
+     * net effect: a sensitive person (low thresholds, so many factors are above) scores
+     * notably higher than a tolerant one in the very same air, which is the whole point of
+     * a PERSONAL risk index.
+     *
+     * @param percentile     how high today's reading is vs the person's history (0-100)
+     * @param aboveThreshold whether it crossed the level that has preceded their symptoms
+     * @return the value fed into the weighted score
+     */
+    private static double personalScoreInput(double percentile, boolean aboveThreshold) {
+        return aboveThreshold ? 60.0 + 0.40 * percentile : 0.35 * percentile;
+    }
+
+    /** How the final score splits between trigger INTENSITY and trigger BREADTH. */
+    private static final double INTENSITY_WEIGHT = 0.5;
+    private static final double BREADTH_WEIGHT = 0.5;
+
+    /**
+     * Blends two views of personal risk into the raw 0-100 score.
+     *
+     * INTENSITY is the weighted average of how elevated the person's factors are
+     * (a single sharp trigger can drive this high). BREADTH is the ABSOLUTE number of
+     * the person's triggers that are above threshold at once. We use the count, not a
+     * fraction, on purpose: a narrowly sensitive person with one strong trigger has a
+     * tiny model where that trigger is most of it, so a fraction would read high and
+     * defeat the point. Counting active triggers makes a broadly sensitive profile
+     * (many triggers firing together) score above a single-trigger one, which is what
+     * "high sensitivity" should mean.
+     *
+     * @param scoreInputs          per-factor personalized inputs
+     * @param weights              per-factor weights
+     * @param meaningfulActiveCount active triggers that ALSO carry real weight (see below)
+     * @return the blended raw score (0-100)
+     */
+    private static double blendedRaw(Map<String, Double> scoreInputs, Map<String, Double> weights,
+                                     long meaningfulActiveCount) {
+        double intensity = RiskScorer.weightedMean(scoreInputs, weights);
+        // ~5-6 genuine triggers firing at once saturates the breadth signal at 100.
+        double breadth = Math.min(100.0, meaningfulActiveCount * 18.0);
+        return INTENSITY_WEIGHT * intensity + BREADTH_WEIGHT * breadth;
+    }
+
+    /**
+     * Counts active triggers that actually matter, that is, factors both above the
+     * person's threshold AND carrying at least an average share of the model's weight.
+     *
+     * This filters out the spurious "active" factors a sparse, focused model can throw
+     * off (low, near-meaningless thresholds on uncorrelated factors), so breadth
+     * reflects genuine multi-trigger sensitivity rather than statistical noise.
+     */
+    private static long meaningfulActive(List<FactorContribution> contributions) {
+        int n = contributions.size();
+        if (n == 0) return 0;
+        double avgWeight = 1.0 / n; // weights are normalized to sum to ~1
+        return contributions.stream()
+                .filter(c -> c.aboveThreshold() && c.weight() >= avgWeight)
+                .count();
+    }
 
     private final EnvironmentalSnapshotRepository snapshotRepo;
     private final CorrelationResultRepository correlationRepo;
@@ -121,6 +188,7 @@ public class RiskScoringService {
         Map<Factor, List<Double>> historyByFactor = collectHistory(history);
 
         Map<String, Double> normalizedScores = new HashMap<>();
+        Map<String, Double> scoreInputs = new HashMap<>();
         Map<String, Double> weights = new HashMap<>();
         List<FactorContribution> contributions = new ArrayList<>();
 
@@ -137,9 +205,14 @@ public class RiskScoringService {
                     && value >= row.getPersonalThreshold();
 
             normalizedScores.put(factor.getKey(), percentile);
+            // The score input is personalized: a reading below THIS person's learned
+            // threshold counts for less, so a highly sensitive person (low thresholds,
+            // most factors above) scores higher than a tolerant one in the same air.
+            scoreInputs.put(factor.getKey(), personalScoreInput(percentile, aboveThreshold));
             weights.put(factor.getKey(), weight);
             contributions.add(new FactorContribution(
-                    factor.getKey(), factor.getDisplayName(), percentile, aboveThreshold, weight));
+                    factor.getKey(), factor.getDisplayName(), percentile, aboveThreshold, weight,
+                    value, factor.getUnit()));
         }
 
         if (normalizedScores.isEmpty()) {
@@ -150,8 +223,8 @@ public class RiskScoringService {
         Double prevSmoothed = prior.map(RiskScoreHistory::getRiskScoreSmoothed).orElse(null);
         boolean prevAlert = prior.map(p -> Boolean.TRUE.equals(p.getAlertTriggered())).orElse(false);
 
-        RiskScoreResult result = riskScorer.computeScore(
-                normalizedScores, weights, prevSmoothed, prevAlert);
+        double raw = blendedRaw(scoreInputs, weights, meaningfulActive(contributions));
+        RiskScoreResult result = riskScorer.smoothAndClassify(raw, prevSmoothed, prevAlert);
 
         int symptomDays = symptomRepo.countSymptomDays(userId);
         ConfidenceLevel confidence = ConfidenceLevel.fromSymptomDays(symptomDays);
@@ -161,6 +234,108 @@ public class RiskScoringService {
 
         return Optional.of(new RiskScoreBreakdown(
                 Instant.now(), result, confidence, symptomDays, contributions, normalizedScores));
+    }
+
+    /**
+     * Rebuilds a day-by-day risk score history so the dashboard trend chart has a real
+     * time series instead of a single point computed "now".
+     *
+     * The live {@link #currentBreakdown} only ever scores the latest snapshot, so a fresh
+     * demo would otherwise show a flat one-day chart. This walks the last {@code days}
+     * days in chronological order, scores each against that day's snapshot using the same
+     * learned model, and advances the EWMA/hysteresis chain across days — producing the
+     * same smoothed signal the hourly scheduler would have built up over time. Existing
+     * history is cleared first so re-seeding stays idempotent.
+     *
+     * @param userId    the user whose model and history series this builds
+     * @param envUserId the owner of the environmental snapshots (same as userId in V1)
+     * @param days      how many days back to backfill
+     * @return number of daily score rows written
+     */
+    public int backfillHistory(String userId, String envUserId, int days) {
+        List<CorrelationResult> model = correlationRepo.findByUserId(userId);
+        if (model.isEmpty()) {
+            return 0;
+        }
+
+        Instant now = Instant.now();
+        Instant from = now.minus(Duration.ofDays(HISTORY_DAYS));
+        List<EnvironmentalSnapshot> history = snapshotRepo.findByDateRange(envUserId, from, now);
+        if (history.isEmpty()) {
+            return 0;
+        }
+        Map<Factor, List<Double>> historyByFactor = collectHistory(history);
+
+        // One representative snapshot per day (highest PM2.5 — the same daily pick the
+        // demo symptom generator uses, so symptoms and scores reference the same reading).
+        Map<LocalDate, EnvironmentalSnapshot> byDay = new TreeMap<>();
+        for (EnvironmentalSnapshot s : history) {
+            LocalDate day = s.getRecordedAt().atZone(ZoneOffset.UTC).toLocalDate();
+            byDay.merge(day, s, (a, b) ->
+                    (a.getPm25() != null && b.getPm25() != null && a.getPm25() >= b.getPm25()) ? a : b);
+        }
+
+        LocalDate cutoff = LocalDate.now(ZoneOffset.UTC).minusDays(days);
+        int symptomDays = symptomRepo.countSymptomDays(userId);
+        ConfidenceLevel confidence = ConfidenceLevel.fromSymptomDays(symptomDays);
+
+        riskHistoryRepo.deleteByUserId(userId);
+
+        Double prevSmoothed = null;
+        boolean prevAlert = false;
+        int written = 0;
+
+        for (Map.Entry<LocalDate, EnvironmentalSnapshot> entry : byDay.entrySet()) {
+            LocalDate day = entry.getKey();
+            if (day.isBefore(cutoff)) continue;
+            EnvironmentalSnapshot snap = entry.getValue();
+
+            Map<String, Double> normalizedScores = new HashMap<>();
+            Map<String, Double> scoreInputs = new HashMap<>();
+            Map<String, Double> weights = new HashMap<>();
+            List<Double> activeWeights = new ArrayList<>();
+            for (CorrelationResult row : model) {
+                Factor factor = Factor.fromKey(row.getFactorName());
+                if (factor == null) continue;
+                Double value = factor.extract(snap);
+                if (value == null) continue;
+                double percentile =
+                        normalizer.normalize(value, historyByFactor.getOrDefault(factor, List.of()));
+                boolean aboveThreshold = row.getPersonalThreshold() != null
+                        && value >= row.getPersonalThreshold();
+                double w = row.getWeight() != null ? row.getWeight() : 0.0;
+                if (aboveThreshold) activeWeights.add(w);
+                normalizedScores.put(factor.getKey(), percentile);
+                scoreInputs.put(factor.getKey(), personalScoreInput(percentile, aboveThreshold));
+                weights.put(factor.getKey(), w);
+            }
+            if (normalizedScores.isEmpty()) continue;
+
+            // Count active triggers that carry at least an average share of weight.
+            double avgWeight = 1.0 / normalizedScores.size();
+            long meaningful = activeWeights.stream().filter(w -> w >= avgWeight).count();
+            double raw = blendedRaw(scoreInputs, weights, meaningful);
+            RiskScoreResult result = riskScorer.smoothAndClassify(raw, prevSmoothed, prevAlert);
+
+            RiskScoreHistory rowToSave = new RiskScoreHistory();
+            rowToSave.setScoredAt(day.atTime(12, 0).toInstant(ZoneOffset.UTC));
+            rowToSave.setUserId(userId);
+            rowToSave.setRiskScore(result.rawScore());
+            rowToSave.setRiskScoreSmoothed(result.smoothedScore());
+            rowToSave.setRiskLabel(result.level().getLabel());
+            rowToSave.setAlertTriggered(result.alertActive());
+            rowToSave.setFactorScores(toJson(normalizedScores));
+            rowToSave.setConfidenceLevel(confidence.name());
+            rowToSave.setSymptomDaysAvailable(symptomDays);
+            riskHistoryRepo.save(rowToSave);
+
+            prevSmoothed = result.smoothedScore();
+            prevAlert = result.alertActive();
+            written++;
+        }
+
+        log.info("Backfilled {} daily risk scores for user '{}'", written, userId);
+        return written;
     }
 
     private void persist(String userId, RiskScoreBreakdown b) {
@@ -214,7 +389,8 @@ public class RiskScoringService {
      * @param weight         this factor's importance weight in the model
      */
     public record FactorContribution(String key, String displayName, double percentile,
-                                     boolean aboveThreshold, double weight) {}
+                                     boolean aboveThreshold, double weight,
+                                     Double value, String unit) {}
 
     /**
      * The full result of a scoring run.

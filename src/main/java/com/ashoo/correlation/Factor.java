@@ -21,40 +21,43 @@ import java.util.function.Function;
  */
 public enum Factor {
 
-    PM25("pm25", "PM2.5", EnvironmentalSnapshot::getPm25),
-    PM10("pm10", "PM10", EnvironmentalSnapshot::getPm10),
-    O3("o3", "Ozone", EnvironmentalSnapshot::getO3),
-    NO2("no2", "Nitrogen dioxide", EnvironmentalSnapshot::getNo2),
-    SO2("so2", "Sulfur dioxide", EnvironmentalSnapshot::getSo2),
-    CO("co", "Carbon monoxide", EnvironmentalSnapshot::getCo),
+    PM25("pm25", "PM2.5", "µg/m³", EnvironmentalSnapshot::getPm25),
+    PM10("pm10", "PM10", "µg/m³", EnvironmentalSnapshot::getPm10),
+    O3("o3", "Ozone", "µg/m³", EnvironmentalSnapshot::getO3),
+    NO2("no2", "Nitrogen dioxide", "µg/m³", EnvironmentalSnapshot::getNo2),
+    SO2("so2", "Sulfur dioxide", "µg/m³", EnvironmentalSnapshot::getSo2),
+    CO("co", "Carbon monoxide", "µg/m³", EnvironmentalSnapshot::getCo),
 
-    POLLEN_ALDER("pollen_alder", "Alder pollen", EnvironmentalSnapshot::getPollenAlder),
-    POLLEN_BIRCH("pollen_birch", "Birch pollen", EnvironmentalSnapshot::getPollenBirch),
-    POLLEN_GRASS("pollen_grass", "Grass pollen", EnvironmentalSnapshot::getPollenGrass),
-    POLLEN_MUGWORT("pollen_mugwort", "Mugwort pollen", EnvironmentalSnapshot::getPollenMugwort),
-    POLLEN_OLIVE("pollen_olive", "Olive pollen", EnvironmentalSnapshot::getPollenOlive),
-    POLLEN_RAGWEED("pollen_ragweed", "Ragweed pollen", EnvironmentalSnapshot::getPollenRagweed),
+    POLLEN_ALDER("pollen_alder", "Alder pollen", "grains/m³", EnvironmentalSnapshot::getPollenAlder),
+    POLLEN_BIRCH("pollen_birch", "Birch pollen", "grains/m³", EnvironmentalSnapshot::getPollenBirch),
+    POLLEN_GRASS("pollen_grass", "Grass pollen", "grains/m³", EnvironmentalSnapshot::getPollenGrass),
+    POLLEN_MUGWORT("pollen_mugwort", "Mugwort pollen", "grains/m³", EnvironmentalSnapshot::getPollenMugwort),
+    POLLEN_OLIVE("pollen_olive", "Olive pollen", "grains/m³", EnvironmentalSnapshot::getPollenOlive),
+    POLLEN_RAGWEED("pollen_ragweed", "Ragweed pollen", "grains/m³", EnvironmentalSnapshot::getPollenRagweed),
 
-    TEMPERATURE("temperature_c", "Temperature", EnvironmentalSnapshot::getTemperatureC),
-    HUMIDITY("humidity_pct", "Humidity", EnvironmentalSnapshot::getHumidityPct),
-    PRESSURE("pressure_msl_hpa", "Barometric pressure", EnvironmentalSnapshot::getPressureMslHpa),
-    WIND_SPEED("wind_speed_ms", "Wind speed", EnvironmentalSnapshot::getWindSpeedMs),
-    WIND_GUSTS("wind_gusts_ms", "Wind gusts", EnvironmentalSnapshot::getWindGustsMs),
+    TEMPERATURE("temperature_c", "Temperature", "°C", EnvironmentalSnapshot::getTemperatureC),
+    HUMIDITY("humidity_pct", "Humidity", "%", EnvironmentalSnapshot::getHumidityPct),
+    PRESSURE("pressure_msl_hpa", "Barometric pressure", "hPa", EnvironmentalSnapshot::getPressureMslHpa),
+    WIND_SPEED("wind_speed_ms", "Wind speed", "m/s", EnvironmentalSnapshot::getWindSpeedMs),
+    WIND_GUSTS("wind_gusts_ms", "Wind gusts", "m/s", EnvironmentalSnapshot::getWindGustsMs),
 
-    CUMULATIVE_PM25_24H("cumulative_pm25_24h", "24h cumulative PM2.5",
+    CUMULATIVE_PM25_24H("cumulative_pm25_24h", "24h cumulative PM2.5", "µg/m³",
             EnvironmentalSnapshot::getCumulativePm2524h),
-    PM25_RATE_OF_CHANGE("pm25_rate_of_change", "PM2.5 rate of change",
+    PM25_RATE_OF_CHANGE("pm25_rate_of_change", "PM2.5 rate of change", "µg/m³·h",
             EnvironmentalSnapshot::getPm25RateOfChange),
-    PRESSURE_DROP_3H("pressure_drop_3h", "3h pressure drop",
+    PRESSURE_DROP_3H("pressure_drop_3h", "3h pressure drop", "hPa",
             EnvironmentalSnapshot::getPressureDrop3h);
 
     private final String key;
     private final String displayName;
+    private final String unit;
     private final Function<EnvironmentalSnapshot, Double> extractor;
 
-    Factor(String key, String displayName, Function<EnvironmentalSnapshot, Double> extractor) {
+    Factor(String key, String displayName, String unit,
+           Function<EnvironmentalSnapshot, Double> extractor) {
         this.key = key;
         this.displayName = displayName;
+        this.unit = unit;
         this.extractor = extractor;
     }
 
@@ -80,6 +83,14 @@ public enum Factor {
      */
     public String getDisplayName() {
         return displayName;
+    }
+
+    /**
+     * @return the physical unit this factor is measured in (e.g. "µg/m³", "°C"),
+     *         so the UI can show a real reading rather than a bare number
+     */
+    public String getUnit() {
+        return unit;
     }
 
     /**

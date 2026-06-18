@@ -67,6 +67,24 @@ public class RiskScorer {
         }
 
         double raw = weightTotal > 0 ? weightedSum / weightTotal : 0.0;
+        return smoothAndClassify(raw, previousSmoothed, previousAlertActive);
+    }
+
+    /**
+     * Applies EWMA smoothing and hysteresis to an already-computed raw score.
+     *
+     * Exposed separately so callers that build the raw score from more than a plain
+     * weighted average (for example, blending trigger intensity with how many of the
+     * person's triggers are currently active) still get identical smoothing and
+     * alert-state behavior, keeping that logic in one place.
+     *
+     * @param raw                 the 0-100 raw score for this moment
+     * @param previousSmoothed    the prior EWMA score, or null on the first ever run
+     * @param previousAlertActive whether an alert was active at the previous reading
+     * @return the raw and smoothed scores, alert state, and RiskLevel
+     */
+    public RiskScoreResult smoothAndClassify(double raw, Double previousSmoothed,
+                                             boolean previousAlertActive) {
         raw = clamp(raw);
 
         double smoothed = previousSmoothed == null
@@ -79,6 +97,25 @@ public class RiskScorer {
                 : smoothed >= alertOnThreshold;   // turn on only once it crosses the on-threshold
 
         return new RiskScoreResult(raw, smoothed, alertActive, RiskLevel.fromScore(smoothed));
+    }
+
+    /**
+     * Weighted mean of factor inputs, renormalized over only the factors present.
+     *
+     * @param inputs  factor key → 0-100 value
+     * @param weights factor key → weight
+     * @return the weighted average, or 0 if no weighted factors are present
+     */
+    public static double weightedMean(Map<String, Double> inputs, Map<String, Double> weights) {
+        double weightedSum = 0.0;
+        double weightTotal = 0.0;
+        for (Map.Entry<String, Double> e : inputs.entrySet()) {
+            Double w = weights.get(e.getKey());
+            if (w == null || w == 0.0) continue;
+            weightedSum += w * e.getValue();
+            weightTotal += w;
+        }
+        return weightTotal > 0 ? weightedSum / weightTotal : 0.0;
     }
 
     /**

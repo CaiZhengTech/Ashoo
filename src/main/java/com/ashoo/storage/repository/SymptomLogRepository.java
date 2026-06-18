@@ -175,6 +175,23 @@ public class SymptomLogRepository {
     }
 
     /**
+     * Removes all synthetic (demo) symptom logs for a user, leaving real entries untouched.
+     *
+     * Demo seeding calls this first so re-seeding is idempotent — without it, each "Seed
+     * demo" press would stack duplicate logs on the same days and corrupt the per-day
+     * correlation. The {@code data_origin} filter guarantees a user's REAL logs are never
+     * touched by a demo reset.
+     *
+     * @param userId the user whose synthetic logs should be cleared
+     * @return number of rows deleted
+     */
+    public int deleteSyntheticByUserId(String userId) {
+        return jdbc.update(
+                "DELETE FROM symptom_log WHERE user_id = ? AND data_origin = 'SEEDED_SYNTHETIC'",
+                userId);
+    }
+
+    /**
      * Returns the count of distinct days with at least one symptom log entry (severity >= 1).
      *
      * Used by the correlation engine to determine confidence level.
