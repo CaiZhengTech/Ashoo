@@ -1,11 +1,11 @@
-# Ashoo — Personal Environmental Health Correlation Engine
+# Ashoo - Personal Environmental Health Correlation Engine
 
-> *"What does the air do to **me** specifically — not to the average person?"*
+> *"What does the air do to **me** specifically, not to the average person?"*
 
 Ashoo is a personal environmental health correlation engine for people with respiratory
 allergies and asthma. Apps like AirNow give population-average AQI thresholds. Ashoo
 learns **your** personal trigger fingerprint by correlating your self-logged symptom days
-against archived environmental data — air quality, pollen, weather, and barometric
+against archived environmental data - air quality, pollen, weather, and barometric
 pressure — then surfaces a personalized 0–100 **Personal Risk Index (PRI)**, a
 plain-English daily briefing, and pattern-based reminders you configured yourself.
 
