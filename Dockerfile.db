@@ -1,0 +1,14 @@
+# Custom TimescaleDB image for Fly.io.
+#
+# Wraps the stock TimescaleDB image with a root entrypoint that fixes the
+# ownership of the Fly-mounted volume (/data, owned by root) so the postgres
+# user can create and write its data directory. Without this, first boot fails
+# with: mkdir: can't create directory '/data/pgdata': Permission denied.
+FROM timescale/timescaledb:latest-pg16
+
+USER root
+COPY db-entrypoint.sh /usr/local/bin/db-entrypoint.sh
+RUN chmod +x /usr/local/bin/db-entrypoint.sh
+
+ENTRYPOINT ["/usr/local/bin/db-entrypoint.sh"]
+CMD ["postgres"]

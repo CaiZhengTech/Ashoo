@@ -1,37 +1,36 @@
-# Fly.io deployment configuration for the Ashoo backend.
-# Deploy with:  fly launch --no-deploy   (first time, to create the app)
-#               fly deploy               (build the Dockerfile and ship it)
+# fly.toml app configuration file generated for ashoo on 2026-06-19T14:14:00-04:00
 #
-# Database: provision a Postgres/TimescaleDB and set the connection as secrets
-# (see README "Deploying to Fly.io"). Secrets are NOT stored in this file.
+# See https://fly.io/docs/reference/configuration/ for information about how to use this file.
+#
 
-app = "ashoo"
-primary_region = "iad"   # Ashburn, VA — closest US East region on Fly.io
+app = 'ashoo'
+primary_region = 'iad'
 
 [build]
-  dockerfile = "Dockerfile"
+  dockerfile = 'Dockerfile'
 
+# JAVA_TOOL_OPTIONS (not JAVA_OPTS) so the JVM auto-applies these flags — the
+# Dockerfile's exec-form ENTRYPOINT does not expand shell vars, so a plain
+# JAVA_OPTS would be silently ignored. preferIPv6Addresses is required for the
+# JVM to resolve Fly's IPv6-only `.internal` DNS (e.g. ashoo-db.internal).
 [env]
-  # Non-secret runtime config. DB_* and API keys are injected via `fly secrets set`.
-  SERVER_PORT = "8080"
-  JAVA_OPTS = "-Xmx180m -Xms64m"
+  JAVA_TOOL_OPTIONS = '-Xmx180m -Xms64m -Djava.net.preferIPv6Addresses=true'
+  SERVER_PORT = '8080'
 
 [http_service]
   internal_port = 8080
   force_https = true
-  # Scale to zero when idle to stay within the ~$2–5/mo target, and wake on request.
-  auto_stop_machines = "stop"
+  auto_stop_machines = 'stop'
   auto_start_machines = true
   min_machines_running = 0
 
-  # Spring Boot Actuator health endpoint — Fly uses this to gate traffic.
   [[http_service.checks]]
-    interval = "30s"
-    timeout = "5s"
-    grace_period = "30s"
-    method = "GET"
-    path = "/actuator/health"
+    interval = '30s'
+    timeout = '5s'
+    grace_period = '30s'
+    method = 'GET'
+    path = '/actuator/health'
 
 [[vm]]
-  size = "shared-cpu-1x"
-  memory = "256mb"
+  size = 'shared-cpu-1x'
+  memory = '256mb'

@@ -1,0 +1,26 @@
+app = "ashoo-db"
+primary_region = "iad"
+
+[build]
+  dockerfile = "Dockerfile.db"
+
+[env]
+  POSTGRES_DB = "ashoo"
+  POSTGRES_USER = "ashoo"
+  PGDATA = "/data/pgdata"
+  # POSTGRES_PASSWORD is set via: flyctl secrets set POSTGRES_PASSWORD=... --app ashoo-db
+
+[[mounts]]
+  source = "timescale_data"
+  destination = "/data"
+
+[checks]
+  [checks.pg]
+    port = 5432
+    type = "tcp"
+    interval = "15s"
+    timeout = "5s"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "256mb"
