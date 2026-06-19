@@ -14,7 +14,7 @@ primary_region = 'iad'
 # JAVA_OPTS would be silently ignored. preferIPv6Addresses is required for the
 # JVM to resolve Fly's IPv6-only `.internal` DNS (e.g. ashoo-db.internal).
 [env]
-  JAVA_TOOL_OPTIONS = '-Xmx180m -Xms64m -Djava.net.preferIPv6Addresses=true'
+  JAVA_TOOL_OPTIONS = '-Xmx384m -Xms128m -Djava.net.preferIPv6Addresses=true'
   SERVER_PORT = '8080'
 
 [http_service]
@@ -33,4 +33,4 @@ primary_region = 'iad'
 
 [[vm]]
   size = 'shared-cpu-1x'
-  memory = '256mb'
+  memory = '512mb'
