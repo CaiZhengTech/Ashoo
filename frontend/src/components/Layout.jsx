@@ -18,7 +18,8 @@ function HealthPill() {
     queryKey: ['health'],
     queryFn: getHealth,
     refetchInterval: 30_000,
-    retry: 0,
+    retry: 2,
+    retryDelay: 6_000,
   });
   const ok = data?.status === 'UP';
   const color = isLoading ? 'bg-ink-300' : ok ? 'bg-emerald-500' : 'bg-red-500';
