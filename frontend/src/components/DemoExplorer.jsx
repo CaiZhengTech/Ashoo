@@ -1,29 +1,92 @@
+import { useEffect, useRef, useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { seedDemo, computeCorrelation } from '../api/endpoints';
+import { seedDemo, computeCorrelation, setUserLocation, suggestPlaces } from '../api/endpoints';
 import { usePersona, PERSONAS } from '../lib/PersonaContext';
 import { useToast } from '../lib/ToastContext';
 import { errorMessage } from '../api/client';
 import { Card, Button, InfoTip } from './ui';
 
-/**
- * Front-and-center demo control on the dashboard.
- *
- * Recruiters can switch whose data they're viewing (the real user or a seeded
- * persona) and the whole dashboard re-queries for that person. "Seed / refresh"
- * regenerates all synthetic data and models; "Recompute" re-runs the model for
- * just the person currently in view. Putting this up top makes the personalized
- * engine immediately explorable without hunting through settings.
- */
 export default function DemoExplorer() {
   const qc = useQueryClient();
   const toast = useToast();
-  const { persona, setPersona, userParam } = usePersona();
+  const { persona, setPersona, userParam, setYouLocation } = usePersona();
+  const [cityInput, setCityInput] = useState('');
+  const [suggestions, setSuggestions] = useState([]);
+  const [showDropdown, setShowDropdown] = useState(false);
+  const [highlightIdx, setHighlightIdx] = useState(-1);
+  const debounceRef = useRef(null);
+  const wrapperRef = useRef(null);
+
+  useEffect(() => {
+    function handleClickOutside(e) {
+      if (wrapperRef.current && !wrapperRef.current.contains(e.target)) {
+        setShowDropdown(false);
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  function handleInputChange(value) {
+    setCityInput(value);
+    setHighlightIdx(-1);
+
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+
+    if (value.trim().length < 2) {
+      setSuggestions([]);
+      setShowDropdown(false);
+      return;
+    }
+
+    debounceRef.current = setTimeout(async () => {
+      try {
+        const results = await suggestPlaces(value.trim());
+        setSuggestions(results);
+        setShowDropdown(results.length > 0);
+      } catch {
+        setSuggestions([]);
+        setShowDropdown(false);
+      }
+    }, 300);
+  }
+
+  function selectCity(city) {
+    setCityInput(city.cityName);
+    setSuggestions([]);
+    setShowDropdown(false);
+    relocate.mutate(city.cityName);
+  }
+
+  function handleKeyDown(e) {
+    if (!showDropdown || suggestions.length === 0) {
+      if (e.key === 'Enter' && cityInput.trim()) {
+        relocate.mutate(cityInput.trim());
+      }
+      return;
+    }
+
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      setHighlightIdx((i) => (i < suggestions.length - 1 ? i + 1 : 0));
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      setHighlightIdx((i) => (i > 0 ? i - 1 : suggestions.length - 1));
+    } else if (e.key === 'Enter') {
+      e.preventDefault();
+      if (highlightIdx >= 0) {
+        selectCity(suggestions[highlightIdx]);
+      } else if (cityInput.trim()) {
+        relocate.mutate(cityInput.trim());
+        setShowDropdown(false);
+      }
+    } else if (e.key === 'Escape') {
+      setShowDropdown(false);
+    }
+  }
 
   const seed = useMutation({
-    mutationFn: async () => {
-      // Seeding already computes every persona server-side; just refresh the views.
-      return seedDemo();
-    },
+    mutationFn: () => seedDemo(),
     onSuccess: () => {
       qc.invalidateQueries();
       toast('Demo data refreshed for all personas');
@@ -40,7 +103,17 @@ export default function DemoExplorer() {
     },
   });
 
-  const busy = seed.isPending || recompute.isPending;
+  const relocate = useMutation({
+    mutationFn: (city) => setUserLocation(city),
+    onSuccess: (data) => {
+      if (data.city && setYouLocation) setYouLocation(data.city);
+      qc.invalidateQueries();
+      toast(`Location set to ${data.city}`);
+      setCityInput('');
+    },
+  });
+
+  const busy = seed.isPending || recompute.isPending || relocate.isPending;
 
   return (
     <Card className="card-pad bg-gradient-to-br from-white to-brand-50/40">
@@ -95,9 +168,60 @@ export default function DemoExplorer() {
         })}
       </div>
 
-      {(seed.isError || recompute.isError) && (
+      {persona === 'you' && (
+        <div className="mt-4 border-t border-ink-100 pt-4">
+          <div className="flex flex-wrap items-end gap-2" ref={wrapperRef}>
+            <div className="relative flex-1">
+              <label className="mb-1 block text-xs font-semibold text-ink-600">
+                Your location
+              </label>
+              <input
+                type="text"
+                value={cityInput}
+                onChange={(e) => handleInputChange(e.target.value)}
+                onFocus={() => suggestions.length > 0 && setShowDropdown(true)}
+                onKeyDown={handleKeyDown}
+                placeholder="e.g. Boston, MA or London"
+                className="w-full rounded-xl border border-ink-200 bg-white px-3 py-1.5 text-sm text-ink-800 transition-shadow focus:border-brand-400 focus:outline-none focus:ring-2 focus:ring-brand-200"
+                autoComplete="off"
+              />
+              {showDropdown && suggestions.length > 0 && (
+                <ul className="absolute z-20 mt-1 max-h-48 w-full overflow-auto rounded-xl border border-ink-200 bg-white py-1 shadow-lg">
+                  {suggestions.map((s, i) => (
+                    <li
+                      key={`${s.cityName}-${s.latitude}-${s.longitude}`}
+                      onMouseDown={() => selectCity(s)}
+                      onMouseEnter={() => setHighlightIdx(i)}
+                      className={`cursor-pointer px-3 py-2 text-sm ${
+                        i === highlightIdx
+                          ? 'bg-brand-50 text-brand-700'
+                          : 'text-ink-700 hover:bg-ink-50'
+                      }`}
+                    >
+                      {s.cityName}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+            <Button
+              variant="secondary"
+              onClick={() => cityInput.trim() && relocate.mutate(cityInput.trim())}
+              disabled={busy || !cityInput.trim()}
+            >
+              {relocate.isPending ? 'Setting…' : 'Set location'}
+            </Button>
+          </div>
+          <p className="mt-1.5 text-[11px] text-ink-400">
+            Changes your environment data. European cities include pollen; US cities get air quality
+            and weather only.
+          </p>
+        </div>
+      )}
+
+      {(seed.isError || recompute.isError || relocate.isError) && (
         <p className="mt-2 text-xs text-red-600">
-          {errorMessage(seed.error || recompute.error)}
+          {errorMessage(seed.error || recompute.error || relocate.error)}
         </p>
       )}
       {seed.isSuccess && !busy && (

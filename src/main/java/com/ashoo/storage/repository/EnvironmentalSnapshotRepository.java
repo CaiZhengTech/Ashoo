@@ -125,6 +125,14 @@ public class EnvironmentalSnapshotRepository {
                 Double.class, userId, Timestamp.from(asOf.minusSeconds(86400)), Timestamp.from(asOf));
     }
 
+    /**
+     * Removes all environmental snapshots for a user, used when re-seeding with
+     * a different location so the old city's data doesn't mix with the new one.
+     */
+    public int deleteByUserId(String userId) {
+        return jdbc.update("DELETE FROM environmental_snapshot WHERE user_id = ?", userId);
+    }
+
     private static Object[] params(EnvironmentalSnapshot s) {
         return new Object[]{
                 Timestamp.from(s.getRecordedAt()), s.getUserId(), s.getLocationId(),

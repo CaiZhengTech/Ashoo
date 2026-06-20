@@ -40,7 +40,7 @@ class BriefingContextBuilderTest {
 
     private final AshooProperties props = new AshooProperties(
             new LocationConfig(42.12, -71.18, "Sharon, MA", "US"),
-            null, null, null, null, null, null, null);
+            null, null, null, null, null, null);
 
     private final BriefingContextBuilder builder = new BriefingContextBuilder(
             riskScoringService, symptomRepo, medicationRepo, locationRepo, snapshotRepo, props);

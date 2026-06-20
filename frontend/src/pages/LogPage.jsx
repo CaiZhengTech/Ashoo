@@ -405,6 +405,7 @@ export default function LogPage() {
       onSettled: () => {
         qc.invalidateQueries({ queryKey: ['risk'] });
         qc.invalidateQueries({ queryKey: ['correlation'] });
+        qc.invalidateQueries({ queryKey: ['briefing'] });
       },
     });
   }

@@ -26,13 +26,6 @@ ashoo:
     city: "Sharon, MA"
     country: "US"
 
-  # European city required for Open-Meteo pollen data (CAMS model — Europe only).
-  # Sharon, MA gets AQ + weather but no pollen from Open-Meteo.
-  demo-location:
-    latitude: 52.3676
-    longitude: 4.9041
-    city: "Amsterdam, Netherlands"
-
   polling:
     interval-ms: 3600000  # 1 hour in ms
 

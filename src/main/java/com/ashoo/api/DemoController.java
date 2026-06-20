@@ -4,30 +4,33 @@ import com.ashoo.common.DemoUsers;
 import com.ashoo.correlation.CorrelationService;
 import com.ashoo.correlation.RiskScoringService;
 import com.ashoo.ingestion.SeedDemoService;
+import com.ashoo.ingestion.openmeteo.OpenMeteoClient;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 @RestController
 @RequestMapping("/api/v1/demo")
 public class DemoController {
 
-    /** Days of trend to backfill per persona so the dashboard chart is populated immediately.
-     *  Set to cover the longest chart range (6 months); naturally capped by available env data. */
     private static final int TREND_DAYS = 180;
 
     private final SeedDemoService seedDemoService;
     private final CorrelationService correlationService;
     private final RiskScoringService riskScoringService;
+    private final OpenMeteoClient openMeteoClient;
 
     public DemoController(SeedDemoService seedDemoService,
                          CorrelationService correlationService,
-                         RiskScoringService riskScoringService) {
+                         RiskScoringService riskScoringService,
+                         OpenMeteoClient openMeteoClient) {
         this.seedDemoService = seedDemoService;
         this.correlationService = correlationService;
         this.riskScoringService = riskScoringService;
+        this.openMeteoClient = openMeteoClient;
     }
 
     @GetMapping("/profiles")
@@ -80,12 +83,40 @@ public class DemoController {
     }
 
     /**
+     * Changes the "You" user's location: geocodes the city, re-seeds 90 days of
+     * environmental history and synthetic symptoms for the new location, then
+     * recomputes the model so the dashboard immediately reflects the new city.
+     *
+     * @param city the city name to geocode (e.g. "Boston, MA", "London")
+     * @return the resolved location and confirmation, or 400 if geocoding failed
+     */
+    @PostMapping("/set-user-location")
+    public ResponseEntity<Map<String, Object>> setUserLocation(@RequestParam String city) {
+        Optional<OpenMeteoClient.GeocodingResult> geo = openMeteoClient.geocode(city);
+        if (geo.isEmpty()) {
+            return ResponseEntity.badRequest().body(Map.of(
+                    "status", "error",
+                    "message", "Could not find location: " + city));
+        }
+        OpenMeteoClient.GeocodingResult result = geo.get();
+        seedDemoService.reseedDefaultUser(result.latitude(), result.longitude(), result.displayName());
+        prepare(DemoUsers.DEFAULT_USER);
+        return ResponseEntity.ok(Map.of(
+                "status", "success",
+                "city", result.displayName(),
+                "lat", result.latitude(),
+                "lon", result.longitude()));
+    }
+
+    /**
      * Computes a user's correlation model and backfills their risk trend.
      *
      * @param userId the persona or default user to prepare
      */
     private void prepare(String userId) {
-        correlationService.computeAndStore(userId, DemoUsers.envFor(userId));
-        riskScoringService.backfillHistory(userId, DemoUsers.envFor(userId), TREND_DAYS);
+        String envUserId = DemoUsers.envFor(userId);
+        correlationService.computeAndStore(userId, envUserId);
+        riskScoringService.backfillHistory(userId, envUserId, TREND_DAYS);
+        riskScoringService.scoreAndPersistFresh(userId, envUserId);
     }
 }

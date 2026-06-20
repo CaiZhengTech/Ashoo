@@ -78,6 +78,8 @@ export const getCurrentReminders = (user) =>
 // ---- Demo ----------------------------------------------------------------
 export const getDemoProfiles = () => http.get('/api/v1/demo/profiles').then((r) => r.data);
 export const seedDemo = () => http.post('/api/v1/demo/seed').then((r) => r.data);
+export const setUserLocation = (city) =>
+  http.post('/api/v1/demo/set-user-location', null, { params: { city } }).then((r) => r.data);
 
 // ---- Ingestion (manual triggers, used by Settings/Places) ----------------
 export const triggerIngestion = () =>

@@ -62,8 +62,8 @@ export default function CurrentReminders() {
           <p className="font-medium text-ink-700">Nothing triggered right now ✦</p>
           <p className="mt-1 text-xs leading-relaxed text-ink-500">
             You have {rules.data.length} reminder{rules.data.length === 1 ? '' : 's'} set. None
-            match the current conditions, today's risk is below their thresholds. They'll appear
-            here automatically when conditions cross the levels you chose.
+            match the current conditions right now. They'll appear here automatically when
+            conditions cross the levels you chose.
           </p>
           <Link
             to="/reminders"

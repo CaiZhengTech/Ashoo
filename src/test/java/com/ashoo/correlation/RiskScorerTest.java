@@ -22,7 +22,7 @@ class RiskScorerTest {
     private static AshooProperties propsWith(double lambda, double on, double off) {
         AshooProperties.CorrelationConfig c = new AshooProperties.CorrelationConfig(
                 10, List.of(0, 24, 48, 72), lambda, on, off);
-        return new AshooProperties(null, null, null, null, null, null, c, null);
+        return new AshooProperties(null, null, null, null, null, c, null);
     }
 
     private final RiskScorer scorer = new RiskScorer(propsWith(0.3, 70.0, 55.0));

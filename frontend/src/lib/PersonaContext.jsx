@@ -15,19 +15,30 @@ export const PERSONAS = [
 
 export function PersonaProvider({ children }) {
   const [persona, setPersona] = useState(() => localStorage.getItem('ashoo.persona') || 'you');
+  const [youLocation, setYouLocationState] = useState(
+    () => localStorage.getItem('ashoo.youLocation') || 'Sharon, MA'
+  );
 
   useEffect(() => {
     localStorage.setItem('ashoo.persona', persona);
   }, [persona]);
 
+  function setYouLocation(city) {
+    setYouLocationState(city);
+    localStorage.setItem('ashoo.youLocation', city);
+  }
+
+  const personas = PERSONAS.map((p) =>
+    p.key === 'you' ? { ...p, location: youLocation } : p
+  );
+
   const value = {
     persona,
     setPersona,
-    // What we send to the API: undefined for the real user, else the persona key.
     userParam: persona === 'you' ? undefined : persona,
-    // Viewing any seeded persona means we're in illustrative/demo territory.
     isDemo: persona !== 'you',
-    meta: PERSONAS.find((p) => p.key === persona) || PERSONAS[0],
+    meta: personas.find((p) => p.key === persona) || personas[0],
+    setYouLocation,
   };
 
   return <PersonaContext.Provider value={value}>{children}</PersonaContext.Provider>;

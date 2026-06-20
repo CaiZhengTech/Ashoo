@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.ashoo.storage.entity.CorrelationResult;
 import com.ashoo.storage.entity.EnvironmentalSnapshot;
 import com.ashoo.storage.entity.RiskScoreHistory;
+import com.ashoo.storage.entity.SymptomLog;
 import com.ashoo.storage.repository.CorrelationResultRepository;
 import com.ashoo.storage.repository.EnvironmentalSnapshotRepository;
 import com.ashoo.storage.repository.RiskScoreHistoryRepository;
@@ -164,13 +165,28 @@ public class RiskScoringService {
     }
 
     /**
-     * Core scoring logic shared by the persisting and preview paths.
-     *
-     * Returns empty (rather than a zero score) when prerequisites are missing — no
-     * current snapshot, or no correlation model yet — so callers can tell "we don't
-     * know" apart from "we computed a genuine low score."
+     * Scores the latest conditions with the EWMA chain reset (smoothed = raw) and
+     * persists the result. Used after an explicit recompute so the new model is
+     * immediately visible on the dashboard without dampening from old history.
      */
+    public Optional<RiskScoreBreakdown> scoreAndPersistFresh(String userId, String envUserId) {
+        Optional<RiskScoreBreakdown> breakdown = doComputeBreakdown(userId, envUserId, true);
+        breakdown.ifPresent(b -> persist(userId, b));
+        return breakdown;
+    }
+
     private Optional<RiskScoreBreakdown> computeBreakdown(String userId, String envUserId) {
+        return doComputeBreakdown(userId, envUserId, false);
+    }
+
+    /**
+     * Core scoring logic. When {@code fresh} is true the EWMA chain is reset so the
+     * score immediately reflects a just-recomputed model without dampening.
+     * Also blends in recent self-reported symptom severity so the PRI visibly
+     * responds when the user logs or edits symptom entries.
+     */
+    private Optional<RiskScoreBreakdown> doComputeBreakdown(String userId, String envUserId,
+                                                             boolean fresh) {
         Optional<EnvironmentalSnapshot> latestOpt = snapshotRepo.findLatest(envUserId);
         if (latestOpt.isEmpty()) {
             return Optional.empty();
@@ -181,7 +197,6 @@ public class RiskScoringService {
         }
         EnvironmentalSnapshot latest = latestOpt.get();
 
-        // Reference distribution for normalization: all readings in the history window.
         Instant to = Instant.now();
         Instant from = to.minus(Duration.ofDays(HISTORY_DAYS));
         List<EnvironmentalSnapshot> history = snapshotRepo.findByDateRange(envUserId, from, to);
@@ -205,9 +220,6 @@ public class RiskScoringService {
                     && value >= row.getPersonalThreshold();
 
             normalizedScores.put(factor.getKey(), percentile);
-            // The score input is personalized: a reading below THIS person's learned
-            // threshold counts for less, so a highly sensitive person (low thresholds,
-            // most factors above) scores higher than a tolerant one in the same air.
             scoreInputs.put(factor.getKey(), personalScoreInput(percentile, aboveThreshold));
             weights.put(factor.getKey(), weight);
             contributions.add(new FactorContribution(
@@ -219,17 +231,32 @@ public class RiskScoringService {
             return Optional.empty();
         }
 
-        Optional<RiskScoreHistory> prior = riskHistoryRepo.findLatest(userId);
-        Double prevSmoothed = prior.map(RiskScoreHistory::getRiskScoreSmoothed).orElse(null);
-        boolean prevAlert = prior.map(p -> Boolean.TRUE.equals(p.getAlertTriggered())).orElse(false);
-
         double raw = blendedRaw(scoreInputs, weights, meaningfulActive(contributions));
+
+        // Blend recent symptom severity so the score responds to logged entries.
+        // Only raises the score: if the user reports worse symptoms than conditions
+        // predict, the PRI reflects that; mild symptoms don't lower the env signal.
+        double symptomSignal = recentSymptomSignal(userId);
+        if (symptomSignal > raw) {
+            raw = 0.65 * raw + 0.35 * symptomSignal;
+        }
+
+        Double prevSmoothed;
+        boolean prevAlert;
+        if (fresh) {
+            prevSmoothed = null;
+            prevAlert = false;
+        } else {
+            Optional<RiskScoreHistory> prior = riskHistoryRepo.findLatest(userId);
+            prevSmoothed = prior.map(RiskScoreHistory::getRiskScoreSmoothed).orElse(null);
+            prevAlert = prior.map(p -> Boolean.TRUE.equals(p.getAlertTriggered())).orElse(false);
+        }
+
         RiskScoreResult result = riskScorer.smoothAndClassify(raw, prevSmoothed, prevAlert);
 
         int symptomDays = symptomRepo.countSymptomDays(userId);
         ConfidenceLevel confidence = ConfidenceLevel.fromSymptomDays(symptomDays);
 
-        // Strongest contributors first for the dashboard breakdown.
         contributions.sort(Comparator.comparingDouble(FactorContribution::weight).reversed());
 
         return Optional.of(new RiskScoreBreakdown(
@@ -350,6 +377,19 @@ public class RiskScoringService {
         row.setConfidenceLevel(b.confidence().name());
         row.setSymptomDaysAvailable(b.symptomDaysAvailable());
         riskHistoryRepo.save(row);
+    }
+
+    /**
+     * Returns a 0-100 signal from the user's highest symptom severity in the last 3 days.
+     * Zero when no recent logs exist, so the score falls back to the pure environmental model.
+     */
+    private double recentSymptomSignal(String userId) {
+        Instant cutoff = Instant.now().minus(Duration.ofDays(3));
+        List<SymptomLog> recent = symptomRepo.findByDateRange(userId, cutoff, Instant.now());
+        if (recent.isEmpty()) return 0;
+        return recent.stream()
+                .mapToInt(s -> s.getSeverity() != null ? s.getSeverity() : 0)
+                .max().orElse(0) * 10.0;
     }
 
     /**

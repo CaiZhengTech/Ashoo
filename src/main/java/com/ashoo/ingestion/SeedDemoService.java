@@ -88,6 +88,9 @@ public class SeedDemoService {
      * their own reminders through the consent-gated UI.
      */
     private static final Map<String, List<ReminderSpec>> PERSONA_REMINDERS = Map.of(
+            DEFAULT_USER, List.of(
+                    new ReminderSpec(40, "Air's getting iffy, so carry my reliever inhaler just in case."),
+                    new ReminderSpec(65, "Conditions are rough today, so limit time outdoors and follow my action plan.")),
             "demo-alex", List.of(
                     new ReminderSpec(35, "Hazy air today, so keep my reliever inhaler with me and take it easy outside.")),
             "demo-jordan", List.of(
@@ -194,9 +197,8 @@ public class SeedDemoService {
                 rule.setRiskScoreThreshold(spec.threshold());
                 rule.setUserNote(spec.note());
                 rule.setMedicationId(null);
-                // Daytime window so demo reminders never "fire" as a late-night ping.
-                rule.setTimeWindowStart(LocalTime.of(7, 0));
-                rule.setTimeWindowEnd(LocalTime.of(22, 0));
+                rule.setTimeWindowStart(null);
+                rule.setTimeWindowEnd(null);
                 rule.setIsActive(true);
                 rule.setCreatedAt(Instant.now());
                 reminderRuleRepo.save(rule);
@@ -213,6 +215,37 @@ public class SeedDemoService {
         consent.setConsentedAt(Instant.now());
         consent.setDisclaimerText("Seeded demo persona: advisory only, not medical advice.");
         consentRepo.save(consent);
+    }
+
+    /**
+     * Re-seeds just the default user ("You") with a new location. Clears old env
+     * data and synthetic symptoms, fetches fresh history for the specified city,
+     * and generates new symptom logs so the model can be recomputed against the
+     * new location's actual conditions.
+     *
+     * @param lat  latitude of the new location
+     * @param lon  longitude of the new location
+     * @param city display name of the new location
+     * @return number of symptom rows inserted
+     */
+    public int reseedDefaultUser(double lat, double lon, String city) {
+        log.info("Re-seeding default user for new location: {} ({}, {})", city, lat, lon);
+
+        snapshotRepo.deleteByUserId(DEFAULT_USER);
+
+        int envRows = ingestionService.seedHistory(lat, lon, city, 90, DEFAULT_USER);
+        log.info("Seeded {} env rows for {} under default user", envRows, city);
+
+        LocalDate endDate = LocalDate.now().minusDays(1);
+        LocalDate startDate = endDate.minusDays(90);
+        List<EnvironmentalSnapshot> snapshots = snapshotRepo.findByDateRange(
+                DEFAULT_USER,
+                startDate.atStartOfDay(ZoneOffset.UTC).toInstant(),
+                endDate.plusDays(1).atStartOfDay(ZoneOffset.UTC).toInstant());
+
+        int symptomRows = seedFor(DEFAULT_USER, "morgan", snapshots, city);
+        briefingLogRepo.deleteByUserId(DEFAULT_USER);
+        return symptomRows;
     }
 
     /**

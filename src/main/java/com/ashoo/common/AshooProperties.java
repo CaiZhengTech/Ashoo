@@ -15,7 +15,6 @@ import java.util.List;
 @ConfigurationProperties(prefix = "ashoo")
 public record AshooProperties(
         LocationConfig defaultLocation,
-        LocationConfig demoLocation,
         PollingConfig polling,
         OpenAqConfig openaq,
         AirNowConfig airnow,

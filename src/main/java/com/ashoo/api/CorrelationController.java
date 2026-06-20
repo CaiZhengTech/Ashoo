@@ -49,8 +49,10 @@ public class CorrelationController {
     @PostMapping("/compute")
     public CorrelationSummary compute(@RequestParam(required = false) String user) {
         String userId = DemoUsers.resolve(user);
-        CorrelationSummary summary = correlationService.computeAndStore(userId, DemoUsers.envFor(userId));
-        riskScoringService.backfillHistory(userId, DemoUsers.envFor(userId), TREND_DAYS);
+        String envUserId = DemoUsers.envFor(userId);
+        CorrelationSummary summary = correlationService.computeAndStore(userId, envUserId);
+        riskScoringService.backfillHistory(userId, envUserId, TREND_DAYS);
+        riskScoringService.scoreAndPersistFresh(userId, envUserId);
         return summary;
     }
 

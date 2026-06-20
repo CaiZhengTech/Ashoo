@@ -197,6 +197,7 @@ export default function InsightsPage() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['correlation'] });
       qc.invalidateQueries({ queryKey: ['risk'] });
+      qc.invalidateQueries({ queryKey: ['briefing'] });
     },
   });
 
