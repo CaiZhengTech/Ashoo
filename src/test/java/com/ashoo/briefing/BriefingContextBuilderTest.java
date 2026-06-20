@@ -4,6 +4,7 @@ import com.ashoo.common.AshooProperties;
 import com.ashoo.common.AshooProperties.LocationConfig;
 import com.ashoo.correlation.RiskScoringService;
 import com.ashoo.storage.entity.SymptomLog;
+import com.ashoo.storage.repository.EnvironmentalSnapshotRepository;
 import com.ashoo.storage.repository.MedicationRepository;
 import com.ashoo.storage.repository.SavedLocationRepository;
 import com.ashoo.storage.repository.SymptomLogRepository;
@@ -34,13 +35,15 @@ class BriefingContextBuilderTest {
     private final SymptomLogRepository symptomRepo = mock(SymptomLogRepository.class);
     private final MedicationRepository medicationRepo = mock(MedicationRepository.class);
     private final SavedLocationRepository locationRepo = mock(SavedLocationRepository.class);
+    private final EnvironmentalSnapshotRepository snapshotRepo =
+            mock(EnvironmentalSnapshotRepository.class);
 
     private final AshooProperties props = new AshooProperties(
             new LocationConfig(42.12, -71.18, "Sharon, MA", "US"),
             null, null, null, null, null, null, null);
 
     private final BriefingContextBuilder builder = new BriefingContextBuilder(
-            riskScoringService, symptomRepo, medicationRepo, locationRepo, props);
+            riskScoringService, symptomRepo, medicationRepo, locationRepo, snapshotRepo, props);
 
     @Test
     void freeTextNote_neverEntersTheContext() throws Exception {

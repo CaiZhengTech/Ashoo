@@ -2,6 +2,7 @@ package com.ashoo.api;
 
 import com.ashoo.api.dto.ReminderRuleRequest;
 import com.ashoo.api.dto.ReminderRuleResponse;
+import com.ashoo.common.DemoUsers;
 import com.ashoo.reminder.ReminderRuleService;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -54,13 +55,17 @@ public class ReminderRuleController {
     }
 
     /**
-     * Lists the user's active reminder rules.
+     * Lists active reminder rules for the given user (or the default user when omitted).
      *
+     * The optional {@code user} param lets the dashboard show a viewed demo persona's
+     * own pre-configured rules; creating and deleting still act on the real user only.
+     *
+     * @param user optional persona to view (default user when omitted/unknown)
      * @return active rules
      */
     @GetMapping
-    public List<ReminderRuleResponse> list() {
-        return ruleService.list(DEFAULT_USER).stream()
+    public List<ReminderRuleResponse> list(@RequestParam(required = false) String user) {
+        return ruleService.list(DemoUsers.resolve(user)).stream()
                 .map(ReminderRuleResponse::from)
                 .toList();
     }

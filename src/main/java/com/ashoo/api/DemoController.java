@@ -36,17 +36,17 @@ public class DemoController {
                 Map.of("persona", "alex",
                         "name", "Alex",
                         "sensitivity", "Low",
-                        "location", "Los Angeles, CA",
+                        "location", "London, United Kingdom",
                         "description", "Only poor air quality (high PM2.5) bothers Alex, and only mildly. Rare symptom days, low confidence so far."),
                 Map.of("persona", "jordan",
                         "name", "Jordan",
                         "sensitivity", "Moderate",
-                        "location", "Atlanta, GA",
+                        "location", "Berlin, Germany",
                         "description", "A classic pollen sufferer. Symptoms track grass and birch pollen with a clear seasonal pattern."),
                 Map.of("persona", "morgan",
                         "name", "Morgan",
                         "sensitivity", "High",
-                        "location", "Houston, TX",
+                        "location", "Paris, France",
                         "description", "Reacts to many things at once (pollen, PM2.5, humidity, pressure swings). Frequent, often severe days.")
         );
     }
@@ -85,7 +85,7 @@ public class DemoController {
      * @param userId the persona or default user to prepare
      */
     private void prepare(String userId) {
-        correlationService.computeAndStore(userId, DemoUsers.ENV_USER);
-        riskScoringService.backfillHistory(userId, DemoUsers.ENV_USER, TREND_DAYS);
+        correlationService.computeAndStore(userId, DemoUsers.envFor(userId));
+        riskScoringService.backfillHistory(userId, DemoUsers.envFor(userId), TREND_DAYS);
     }
 }

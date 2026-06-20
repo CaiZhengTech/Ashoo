@@ -4,7 +4,7 @@ package com.ashoo.correlation;
  * The result of finding a personal threshold for one factor.
  *
  * Bundles the cut-point with the evidence behind it so the UI can be honest:
- * "Threshold estimated from 6 symptom days (low confidence — keep logging)".
+ * "Threshold estimated from 6 symptom days (low confidence, keep logging)".
  * A record is ideal here — this is immutable value data with no behavior.
  *
  * @param threshold        the factor value (in native units) above which the user

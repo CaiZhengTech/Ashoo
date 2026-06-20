@@ -49,8 +49,8 @@ public class CorrelationController {
     @PostMapping("/compute")
     public CorrelationSummary compute(@RequestParam(required = false) String user) {
         String userId = DemoUsers.resolve(user);
-        CorrelationSummary summary = correlationService.computeAndStore(userId, DemoUsers.ENV_USER);
-        riskScoringService.backfillHistory(userId, DemoUsers.ENV_USER, TREND_DAYS);
+        CorrelationSummary summary = correlationService.computeAndStore(userId, DemoUsers.envFor(userId));
+        riskScoringService.backfillHistory(userId, DemoUsers.envFor(userId), TREND_DAYS);
         return summary;
     }
 
@@ -75,7 +75,8 @@ public class CorrelationController {
      */
     @GetMapping("/mismatches")
     public List<MismatchDayResponse> mismatches(@RequestParam(required = false) String user) {
-        return correlationService.findMismatchDays(DemoUsers.resolve(user), DemoUsers.ENV_USER).stream()
+        String userId = DemoUsers.resolve(user);
+        return correlationService.findMismatchDays(userId, DemoUsers.envFor(userId)).stream()
                 .map(MismatchDayResponse::from)
                 .toList();
     }

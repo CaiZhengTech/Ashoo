@@ -70,7 +70,7 @@ public class IngestionService {
         }
 
         EnvironmentalSnapshot snapshot = fetched.get();
-        snapshot = withUserDefaults(snapshot);
+        snapshot = withUser(snapshot, "ashoo-user");
 
         Optional<EnvironmentalSnapshot> previous = snapshotRepo.findPrevious(
                 snapshot.getUserId(), snapshot.getRecordedAt());
@@ -106,10 +106,29 @@ public class IngestionService {
      * @return number of rows inserted
      */
     public int seedHistory(double lat, double lon, String cityName, int days) {
+        return seedHistory(lat, lon, cityName, days, "ashoo-user");
+    }
+
+    /**
+     * Backfills historical data for a specific location, number of days, and owner.
+     *
+     * The {@code userId} overload lets the demo seed give each persona its own city's
+     * real history — every snapshot is re-keyed to {@code userId} before insert, so the
+     * correlation and scoring engines read each persona against its own environment.
+     *
+     * @param lat      latitude
+     * @param lon      longitude
+     * @param cityName display name
+     * @param days     number of days to backfill
+     * @param userId   the owner to store the snapshots under
+     * @return number of rows inserted
+     */
+    public int seedHistory(double lat, double lon, String cityName, int days, String userId) {
         LocalDate endDate = LocalDate.now().minusDays(1);
         LocalDate startDate = endDate.minusDays(days);
 
-        log.info("Seeding {} days of history for {} ({}, {})", days, cityName, lat, lon);
+        log.info("Seeding {} days of history for {} ({}, {}) under user '{}'",
+                days, cityName, lat, lon, userId);
 
         List<EnvironmentalSnapshot> snapshots = openMeteoClient.fetchHistorical(
                 lat, lon, cityName, startDate, endDate);
@@ -119,26 +138,28 @@ public class IngestionService {
             return 0;
         }
 
-        // Compute derived signals sequentially
+        // Compute derived signals sequentially (before re-keying, so each location's
+        // deltas are computed within its own series).
         EnvironmentalSnapshot previous = null;
         for (EnvironmentalSnapshot snapshot : snapshots) {
             derivedCalc.compute(snapshot, Optional.ofNullable(previous));
             previous = snapshot;
         }
 
-        // Set user defaults and batch insert
-        snapshots.forEach(this::withUserDefaults);
-        snapshotRepo.saveAll(snapshots);
+        // Re-key every snapshot to the requested owner, then batch insert.
+        List<EnvironmentalSnapshot> owned = snapshots.stream()
+                .map(s -> withUser(s, userId))
+                .toList();
+        snapshotRepo.saveAll(owned);
 
-        log.info("Seeded {} historical snapshots for {}", snapshots.size(), cityName);
-        return snapshots.size();
+        log.info("Seeded {} historical snapshots for {} under '{}'", owned.size(), cityName, userId);
+        return owned.size();
     }
 
-    private EnvironmentalSnapshot withUserDefaults(EnvironmentalSnapshot s) {
-        if (s.getUserId() == null || s.getUserId().isEmpty()) {
-            return EnvironmentalSnapshot.builder()
+    private EnvironmentalSnapshot withUser(EnvironmentalSnapshot s, String userId) {
+        return EnvironmentalSnapshot.builder()
                     .recordedAt(s.getRecordedAt())
-                    .userId("ashoo-user")
+                    .userId(userId)
                     .locationId(s.getLocationId())
                     .latitude(s.getLatitude())
                     .longitude(s.getLongitude())
@@ -159,7 +180,5 @@ public class IngestionService {
                     .dataSource(s.getDataSource())
                     .dataOrigin(s.getDataOrigin())
                     .build();
-        }
-        return s;
     }
 }

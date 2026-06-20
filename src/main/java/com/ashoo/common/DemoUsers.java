@@ -9,9 +9,9 @@ import java.util.Set;
  * default user and the three seeded personas to see how the same engine behaves
  * for different sensitivities. Centralizing the allow-list here means no endpoint
  * can be coaxed into reading an arbitrary user id from the query string — anything
- * unrecognized falls back to the default user. Environmental data always lives
- * under the default user in V1 (one shared Amsterdam history), so {@link #ENV_USER}
- * is constant regardless of which persona is being viewed.
+ * unrecognized falls back to the default user. Each user now owns its own
+ * environmental history (every demo persona lives in a distinct city), so the
+ * environment owner for a user is resolved via {@link #envFor(String)}.
  */
 public final class DemoUsers {
 
@@ -20,8 +20,20 @@ public final class DemoUsers {
     /** The single real user the app is built around. */
     public static final String DEFAULT_USER = "ashoo-user";
 
-    /** Owner of the shared environmental snapshots in V1 (every persona reads these). */
-    public static final String ENV_USER = "ashoo-user";
+    /**
+     * The environment owner for a given user.
+     *
+     * Each user owns its own environmental snapshots now that demo personas live in
+     * distinct cities, so this is the identity. It stays a named method so the
+     * per-user environment design is explicit at every call site, and so env
+     * ownership could be re-centralized in one place if that ever changes again.
+     *
+     * @param userId an already-resolved user id
+     * @return the user id whose environmental snapshots this user reads
+     */
+    public static String envFor(String userId) {
+        return userId;
+    }
 
     /** Every user id a request is permitted to read. */
     private static final Set<String> ALLOWED =

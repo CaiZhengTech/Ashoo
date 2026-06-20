@@ -8,9 +8,9 @@ const PersonaContext = createContext(null);
 
 export const PERSONAS = [
   { key: 'you', name: 'You', blurb: 'Your own logged data', location: 'Sharon, MA' },
-  { key: 'alex', name: 'Alex', blurb: 'Low, pollution only', location: 'Los Angeles, CA' },
-  { key: 'jordan', name: 'Jordan', blurb: 'Moderate, pollen season', location: 'Atlanta, GA' },
-  { key: 'morgan', name: 'Morgan', blurb: 'High, many triggers', location: 'Houston, TX' },
+  { key: 'alex', name: 'Alex', blurb: 'Low, pollution only', location: 'London, United Kingdom' },
+  { key: 'jordan', name: 'Jordan', blurb: 'Moderate, pollen season', location: 'Berlin, Germany' },
+  { key: 'morgan', name: 'Morgan', blurb: 'High, many triggers', location: 'Paris, France' },
 ];
 
 export function PersonaProvider({ children }) {

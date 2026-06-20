@@ -28,11 +28,12 @@ public class BriefingPromptBuilder {
             1. Use hedged language: "historically," "similar to," "may," "tend to"
             2. Never say "take [medication]" or specify any dose or frequency
             3. Never claim to diagnose, predict with certainty, or use clinical language
-            4. If confidence is LOW, include "you're still early — keep logging for better insights"
+            4. If confidence is LOW, include "you're still early, so keep logging for better insights"
             5. Always end your response with exactly this sentence:
                "As always, consult your doctor for medical decisions."
             6. Keep it friendly, clear, and under 100 words
             7. Do not use markdown formatting
+            8. Do not use em-dashes; use commas, periods, or parentheses instead
             """;
 
     private final ObjectMapper objectMapper;

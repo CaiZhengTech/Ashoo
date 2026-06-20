@@ -109,8 +109,8 @@ function FactorRow({ r }) {
 
 function Detail({ label, value, hint }) {
   return (
-    <div className="flex flex-col gap-0.5 sm:flex-row sm:items-baseline sm:gap-2">
-      <span className="w-44 shrink-0 font-semibold text-ink-700">{label}</span>
+    <div className="flex flex-col gap-0.5 sm:flex-row sm:items-baseline sm:gap-1.5">
+      <span className="w-40 shrink-0 font-semibold text-ink-700">{label}</span>
       <span className="font-semibold tabular-nums text-ink-800">{value}</span>
       {hint && <span className="text-ink-400">, {hint}</span>}
     </div>

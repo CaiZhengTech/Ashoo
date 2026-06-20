@@ -42,7 +42,7 @@ public class RiskController {
     public ResponseEntity<RiskCurrentResponse> current(
             @RequestParam(required = false) String user) {
         String userId = DemoUsers.resolve(user);
-        return riskScoringService.currentBreakdown(userId, DemoUsers.ENV_USER)
+        return riskScoringService.currentBreakdown(userId, DemoUsers.envFor(userId))
                 .map(RiskCurrentResponse::from)
                 .map(ResponseEntity::ok)
                 .orElseGet(() -> ResponseEntity.status(409).build());

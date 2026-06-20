@@ -66,7 +66,7 @@ public class LocationService {
             }
             OpenMeteoClient.GeocodingResult geo = openMeteoClient.geocode(query)
                     .orElseThrow(() -> new IllegalArgumentException(
-                            "Could not geocode \"" + query + "\" — check the city name and try again."));
+                            "Could not geocode \"" + query + "\". Check the city name and try again."));
             location.setLatitude(geo.latitude());
             location.setLongitude(geo.longitude());
             location.setCityName(geo.displayName());
@@ -127,7 +127,7 @@ public class LocationService {
                         OpenMeteoClient.GeocodingResult geo = openMeteoClient
                                 .geocode(updated.getCityName())
                                 .orElseThrow(() -> new IllegalArgumentException(
-                                        "Could not geocode \"" + updated.getCityName() + "\" — check the city name and try again."));
+                                        "Could not geocode \"" + updated.getCityName() + "\". Check the city name and try again."));
                         existing.setCityName(geo.displayName());
                         existing.setLatitude(geo.latitude());
                         existing.setLongitude(geo.longitude());

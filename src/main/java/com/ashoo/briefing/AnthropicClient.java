@@ -64,7 +64,7 @@ public class AnthropicClient {
      */
     public Optional<ClaudeResult> generateText(String systemPrompt, String userMessage) {
         if (!isConfigured()) {
-            log.debug("No Anthropic API key configured — using fallback briefing template");
+            log.debug("No Anthropic API key configured, using fallback briefing template");
             return Optional.empty();
         }
         try {
@@ -84,7 +84,7 @@ public class AnthropicClient {
                     .body(MessagesResponse.class);
 
             if (response == null || response.content() == null || response.content().isEmpty()) {
-                log.warn("Anthropic API returned no content — using fallback");
+                log.warn("Anthropic API returned no content, using fallback");
                 return Optional.empty();
             }
 
@@ -96,7 +96,7 @@ public class AnthropicClient {
             return Optional.of(new ClaudeResult(text, tokens));
 
         } catch (RestClientException e) {
-            log.error("Anthropic API call failed — using fallback: {}", e.getMessage());
+            log.error("Anthropic API call failed, using fallback: {}", e.getMessage());
             return Optional.empty();
         }
     }

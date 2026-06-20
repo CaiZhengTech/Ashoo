@@ -1,10 +1,12 @@
 package com.ashoo.api;
 
+import com.ashoo.common.DemoUsers;
 import com.ashoo.correlation.RiskScoringService;
 import com.ashoo.reminder.ReminderEngine;
 import com.ashoo.reminder.ReminderEngine.ReminderResult;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.time.LocalTime;
@@ -20,8 +22,6 @@ import java.util.List;
 @RestController
 @RequestMapping("/api/v1/reminders")
 public class ReminderController {
-
-    private static final String DEFAULT_USER = "ashoo-user";
 
     private final ReminderEngine reminderEngine;
     private final RiskScoringService riskScoringService;
@@ -41,10 +41,11 @@ public class ReminderController {
      * @return triggered reminders, each with the disclaimer; empty if none fired
      */
     @GetMapping("/current")
-    public List<ReminderResult> current() {
-        double score = riskScoringService.currentBreakdown(DEFAULT_USER, DEFAULT_USER)
+    public List<ReminderResult> current(@RequestParam(required = false) String user) {
+        String userId = DemoUsers.resolve(user);
+        double score = riskScoringService.currentBreakdown(userId, DemoUsers.envFor(userId))
                 .map(b -> b.score().smoothedScore())
                 .orElse(0.0);
-        return reminderEngine.evaluateReminders(DEFAULT_USER, score, LocalTime.now());
+        return reminderEngine.evaluateReminders(userId, score, LocalTime.now());
     }
 }

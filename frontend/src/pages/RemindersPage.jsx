@@ -28,6 +28,7 @@ import {
 } from '../components/ui';
 import { MED_TYPES, medTypeLabel, num } from '../lib/format';
 import { useToast } from '../lib/ToastContext';
+import { usePersona } from '../lib/PersonaContext';
 
 // Mirrors ConsentService.CONSENT_DISCLAIMER on the backend so the user reads the
 // exact statement they are agreeing to, before the server records it.
@@ -189,11 +190,20 @@ function MedicationsCard() {
   );
 }
 
-function ReminderRulesCard() {
+function ReminderRulesCard({ userParam, readOnly = false }) {
   const qc = useQueryClient();
   const toast = useToast();
-  const rules = useQuery({ queryKey: ['reminder-rules'], queryFn: getReminderRules, retry: 0 });
-  const meds = useQuery({ queryKey: ['medications'], queryFn: getMedications, retry: 0 });
+  const rules = useQuery({
+    queryKey: ['reminder-rules', userParam ?? 'you'],
+    queryFn: () => getReminderRules(userParam),
+    retry: 0,
+  });
+  const meds = useQuery({
+    queryKey: ['medications'],
+    queryFn: getMedications,
+    retry: 0,
+    enabled: !readOnly,
+  });
 
   const [threshold, setThreshold] = useState(70);
   const [note, setNote] = useState('');
@@ -251,21 +261,25 @@ function ReminderRulesCard() {
               <div>
                 <p className="text-sm font-medium text-ink-800">&ldquo;{r.userNote}&rdquo;</p>
                 <p className="mt-0.5 text-xs text-ink-500">
-                  PRI ≥ {Math.round(r.riskScoreThreshold)} · {medName(r.medicationId)} · remind at{' '}
+                  PRI ≥ {Math.round(r.riskScoreThreshold)}
+                  {r.medicationId ? ` · ${medName(r.medicationId)}` : ''} · remind at{' '}
                   {String(r.timeWindowStart).slice(0, 5)}
                 </p>
               </div>
-              <button
-                onClick={() => del.mutate(r.id)}
-                className="rounded-lg px-2 py-1 text-xs font-semibold text-red-600 hover:bg-red-50"
-              >
-                Remove
-              </button>
+              {!readOnly && (
+                <button
+                  onClick={() => del.mutate(r.id)}
+                  className="rounded-lg px-2 py-1 text-xs font-semibold text-red-600 hover:bg-red-50"
+                >
+                  Remove
+                </button>
+              )}
             </li>
           ))}
         </ul>
       )}
 
+      {!readOnly && (
       <form
         onSubmit={(e) => {
           e.preventDefault();
@@ -309,6 +323,7 @@ function ReminderRulesCard() {
           {add.isPending ? 'Saving…' : 'Add rule'}
         </Button>
       </form>
+      )}
     </Card>
   );
 }
@@ -316,7 +331,13 @@ function ReminderRulesCard() {
 export default function RemindersPage() {
   const qc = useQueryClient();
   const toast = useToast();
-  const consent = useQuery({ queryKey: ['consent'], queryFn: getConsent, retry: 0 });
+  const { isDemo, userParam, meta } = usePersona();
+  const consent = useQuery({
+    queryKey: ['consent'],
+    queryFn: getConsent,
+    retry: 0,
+    enabled: !isDemo,
+  });
   const accept = useMutation({
     mutationFn: acceptConsent,
     onSuccess: () => {
@@ -324,6 +345,23 @@ export default function RemindersPage() {
       toast('Reminders enabled');
     },
   });
+
+  // Viewing a demo persona: show its pre-configured reminders read-only, matching the
+  // dashboard. Consent and medication management stay with the real "you" user only.
+  if (isDemo) {
+    return (
+      <div className="space-y-6">
+        <div>
+          <h1 className="text-2xl font-bold text-ink-800">{meta.name}&rsquo;s reminders</h1>
+          <p className="mt-1 text-sm text-ink-500">
+            Pre-configured reminders for this demo persona in {meta.location}, shown read-only.
+            Switch to the You view to manage your own.
+          </p>
+        </div>
+        <ReminderRulesCard userParam={userParam} readOnly />
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">

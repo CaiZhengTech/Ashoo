@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { getCurrentReminders, getReminderRules } from '../api/endpoints';
 import { Card, Skeleton, EmptyState, ErrorState } from './ui';
 import { errorMessage } from '../api/client';
+import { usePersona } from '../lib/PersonaContext';
 
 /**
  * Shows reminders that match current conditions, each one the user's OWN note
@@ -16,14 +17,15 @@ import { errorMessage } from '../api/client';
  * nothing happened when today's risk is simply below the threshold.
  */
 export default function CurrentReminders() {
+  const { userParam } = usePersona();
   const fired = useQuery({
-    queryKey: ['reminders', 'current'],
-    queryFn: getCurrentReminders,
+    queryKey: ['reminders', 'current', userParam ?? 'you'],
+    queryFn: () => getCurrentReminders(userParam),
     retry: 0,
   });
   const rules = useQuery({
-    queryKey: ['reminder-rules'],
-    queryFn: getReminderRules,
+    queryKey: ['reminder-rules', userParam ?? 'you'],
+    queryFn: () => getReminderRules(userParam),
     retry: 0,
   });
 
@@ -43,8 +45,8 @@ export default function CurrentReminders() {
                 <div>
                   <p className="font-medium text-ink-800">{r.userNote}</p>
                   <p className="mt-0.5 text-xs text-ink-500">
-                    {r.medicationName} · {r.medicationType} · triggers at PRI ≥{' '}
-                    {Math.round(r.threshold)}
+                    {r.medicationName ? `${r.medicationName} · ${r.medicationType} · ` : ''}
+                    triggers at PRI ≥ {Math.round(r.threshold)}
                   </p>
                 </div>
               </div>

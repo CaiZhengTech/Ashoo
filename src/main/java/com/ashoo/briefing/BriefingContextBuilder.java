@@ -3,12 +3,15 @@ package com.ashoo.briefing;
 import com.ashoo.briefing.BriefingContext.RecentSymptom;
 import com.ashoo.briefing.BriefingContext.TopFactor;
 import com.ashoo.common.AshooProperties;
+import com.ashoo.common.DemoUsers;
 import com.ashoo.correlation.ConfidenceLevel;
 import com.ashoo.correlation.RiskScoringService;
 import com.ashoo.correlation.RiskScoringService.RiskScoreBreakdown;
+import com.ashoo.storage.entity.EnvironmentalSnapshot;
 import com.ashoo.storage.entity.Medication;
 import com.ashoo.storage.entity.SavedLocation;
 import com.ashoo.storage.entity.SymptomLog;
+import com.ashoo.storage.repository.EnvironmentalSnapshotRepository;
 import com.ashoo.storage.repository.MedicationRepository;
 import com.ashoo.storage.repository.SavedLocationRepository;
 import com.ashoo.storage.repository.SymptomLogRepository;
@@ -43,17 +46,20 @@ public class BriefingContextBuilder {
     private final SymptomLogRepository symptomRepo;
     private final MedicationRepository medicationRepo;
     private final SavedLocationRepository locationRepo;
+    private final EnvironmentalSnapshotRepository snapshotRepo;
     private final AshooProperties props;
 
     public BriefingContextBuilder(RiskScoringService riskScoringService,
                                   SymptomLogRepository symptomRepo,
                                   MedicationRepository medicationRepo,
                                   SavedLocationRepository locationRepo,
+                                  EnvironmentalSnapshotRepository snapshotRepo,
                                   AshooProperties props) {
         this.riskScoringService = riskScoringService;
         this.symptomRepo = symptomRepo;
         this.medicationRepo = medicationRepo;
         this.locationRepo = locationRepo;
+        this.snapshotRepo = snapshotRepo;
         this.props = props;
     }
 
@@ -64,10 +70,10 @@ public class BriefingContextBuilder {
      * @return a fully populated, privacy-safe context ready to serialize into the prompt
      */
     public BriefingContext buildContext(String userId) {
-        // Environmental data lives under the shared env user in V1, so a persona's
-        // briefing must score against that — not against its own (empty) env history.
+        // Each user owns its environment (personas live in distinct cities), so a
+        // persona's briefing scores against its own city's history.
         Optional<RiskScoreBreakdown> breakdownOpt =
-                riskScoringService.currentBreakdown(userId, com.ashoo.common.DemoUsers.ENV_USER);
+                riskScoringService.currentBreakdown(userId, com.ashoo.common.DemoUsers.envFor(userId));
 
         int riskScore;
         String riskLabel;
@@ -133,9 +139,20 @@ public class BriefingContextBuilder {
     }
 
     /**
-     * Resolves the user's primary location name, falling back to the configured default.
+     * Resolves the location name to print in the briefing.
+     *
+     * Prefers the city of the environment the score was actually computed against —
+     * each persona owns its own city's history, so this names the persona's real
+     * location (Amsterdam/London/Berlin/Paris) instead of the configured default.
+     * Falls back to a saved primary location, then the configured default, for users
+     * with no environmental data yet.
      */
     private String resolveLocation(String userId) {
+        Optional<String> envCity = snapshotRepo.findLatest(DemoUsers.envFor(userId))
+                .map(EnvironmentalSnapshot::getCityName)
+                .filter(c -> c != null && !c.isBlank());
+        if (envCity.isPresent()) return envCity.get();
+
         List<SavedLocation> locations = locationRepo.findActiveByUserId(userId);
         return locations.stream()
                 .filter(l -> Boolean.TRUE.equals(l.getIsPrimary()))

@@ -54,7 +54,7 @@ public class ApiRateLimiter {
     public boolean acquire(String apiName) throws InterruptedException {
         Semaphore semaphore = limiters.get(apiName);
         if (semaphore == null) {
-            log.warn("No rate limiter registered for '{}' — allowing request", apiName);
+            log.warn("No rate limiter registered for '{}', allowing request", apiName);
             return true;
         }
         semaphore.acquire();

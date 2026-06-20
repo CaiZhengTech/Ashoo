@@ -13,13 +13,13 @@ public enum RiskLevel {
     GREAT(0, 20, "Great", "#22C55E",
             "Conditions look good for you today"),
     MODERATE(21, 40, "Moderate", "#EAB308",
-            "Minor irritants present — most people fine"),
+            "Minor irritants present, most people fine"),
     ELEVATED(41, 60, "Elevated", "#F97316",
             "Conditions match some of your past symptom days"),
     HIGH(61, 80, "High", "#EF4444",
-            "Conditions closely match your past flare days — have meds handy"),
+            "Conditions closely match your past flare days, so have meds handy"),
     SEVERE(81, 100, "Severe", "#A855F7",
-            "Conditions match your worst recorded days — limit outdoor exposure");
+            "Conditions match your worst recorded days, so limit outdoor exposure");
 
     private final int min;
     private final int max;

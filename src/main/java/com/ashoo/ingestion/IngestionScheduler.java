@@ -68,7 +68,7 @@ public class IngestionScheduler {
                     .ifPresentOrElse(
                             b -> log.info("Risk scored: {} ({})",
                                     Math.round(b.score().smoothedScore()), b.score().level().getLabel()),
-                            () -> log.debug("Risk scoring skipped — no snapshot or model yet"));
+                            () -> log.debug("Risk scoring skipped, no snapshot or model yet"));
         } catch (Exception e) {
             log.error("Risk scoring failed (ingest still succeeded)", e);
         }

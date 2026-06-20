@@ -14,8 +14,8 @@
  */
 public enum ConfidenceLevel {
 
-    LOW("Estimates only — keep logging"),
-    MEDIUM("Patterns emerging — thresholds improving"),
+    LOW("Estimates only, keep logging"),
+    MEDIUM("Patterns emerging, thresholds improving"),
     HIGH("Strong personal baseline established");
 
     private final String message;

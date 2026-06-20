@@ -1,9 +1,13 @@
 package com.ashoo.ingestion;
 
+import com.ashoo.storage.entity.ConsentRecord;
 import com.ashoo.storage.entity.EnvironmentalSnapshot;
+import com.ashoo.storage.entity.ReminderRule;
 import com.ashoo.storage.entity.SymptomLog;
 import com.ashoo.storage.repository.BriefingLogRepository;
+import com.ashoo.storage.repository.ConsentRecordRepository;
 import com.ashoo.storage.repository.EnvironmentalSnapshotRepository;
+import com.ashoo.storage.repository.ReminderRuleRepository;
 import com.ashoo.storage.repository.SymptomLogRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -11,6 +15,7 @@ import org.springframework.stereotype.Service;
 
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.LocalTime;
 import java.time.ZoneOffset;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
@@ -33,9 +38,7 @@ public class SeedDemoService {
 
     private static final Logger log = LoggerFactory.getLogger(SeedDemoService.class);
 
-    /** Amsterdam coordinates — required for Open-Meteo pollen data (CAMS is Europe-only). */
-    private static final double AMSTERDAM_LAT = 52.3676;
-    private static final double AMSTERDAM_LON = 4.9041;
+    /** Display name / fallback city for the {@link #seedPersona} convenience path. */
     private static final String AMSTERDAM_CITY = "Amsterdam, Netherlands";
 
     /**
@@ -46,65 +49,108 @@ public class SeedDemoService {
      */
     private static final String DEFAULT_USER = "ashoo-user";
 
-    /** Which persona's trigger profile to project onto the default user. "morgan" is the
-     *  high-sensitivity profile, which yields the richest correlations and mismatch days. */
-    private static final String DEFAULT_USER_PROFILE = "morgan";
+    /**
+     * One persona's home: the user id its rows are written under, the trigger profile
+     * that shapes its synthetic symptoms, and the REAL city whose environmental history
+     * is fetched for it. Each one lives in a distinct city, so its Personal Risk Index
+     * reflects that city's actual conditions correlated with its own logs.
+     */
+    private record PersonaSeed(String userId, String profile,
+                               double lat, double lon, String city) {}
+
+    /**
+     * "You" (the default user) plus the three browseable personas, each in its own city.
+     * "You" uses Sharon, MA, the configured home location the live scheduler also ingests,
+     * so the dashboard's conditions match where the user actually is (US air quality and
+     * weather; Open-Meteo has no pollen outside Europe). The browseable personas use
+     * European cities so their pollen-driven profiles stay meaningful.
+     */
+    private static final List<PersonaSeed> PERSONA_SEEDS = List.of(
+            new PersonaSeed(DEFAULT_USER,  "morgan", 42.1237, -71.1847, "Sharon, MA"),
+            new PersonaSeed("demo-alex",   "alex",   51.5072,  -0.1276, "London, United Kingdom"),
+            new PersonaSeed("demo-jordan", "jordan", 52.5200,  13.4050, "Berlin, Germany"),
+            new PersonaSeed("demo-morgan", "morgan", 48.8566,   2.3522, "Paris, France")
+    );
 
     private static final Map<String, String> PERSONA_DESCRIPTIONS = Map.of(
-            "alex",   "Low sensitivity — symptoms only under strict multi-trigger conditions",
-            "jordan", "Moderate sensitivity — clear seasonal patterns",
-            "morgan", "High sensitivity — frequent episodes, non-obvious triggers"
+            "alex",   "Low sensitivity: symptoms only under strict multi-trigger conditions",
+            "jordan", "Moderate sensitivity: clear seasonal patterns",
+            "morgan", "High sensitivity: frequent episodes, non-obvious triggers"
+    );
+
+    /** One pre-configured reminder for a persona: the score that trips it and the user's note. */
+    private record ReminderSpec(double threshold, String note) {}
+
+    /**
+     * Pre-configured reminders per demo persona, tuned to each one's sensitivity. These are
+     * the persona's OWN notes echoed back when their risk crosses the threshold — Ashoo never
+     * invents advice. Seeded only for the synthetic personas; the real "you" user manages
+     * their own reminders through the consent-gated UI.
+     */
+    private static final Map<String, List<ReminderSpec>> PERSONA_REMINDERS = Map.of(
+            "demo-alex", List.of(
+                    new ReminderSpec(35, "Hazy air today, so keep my reliever inhaler with me and take it easy outside.")),
+            "demo-jordan", List.of(
+                    new ReminderSpec(45, "Pollen's climbing, so take my antihistamine before heading out."),
+                    new ReminderSpec(65, "High pollen day, so keep the windows shut and limit time outdoors.")),
+            "demo-morgan", List.of(
+                    new ReminderSpec(50, "Conditions are stacking up, so carry my rescue inhaler today."),
+                    new ReminderSpec(72, "Rough air day, so plan to stay indoors and follow my action plan."))
     );
 
     private final IngestionService ingestionService;
     private final EnvironmentalSnapshotRepository snapshotRepo;
     private final SymptomLogRepository symptomRepo;
     private final BriefingLogRepository briefingLogRepo;
+    private final ReminderRuleRepository reminderRuleRepo;
+    private final ConsentRecordRepository consentRepo;
 
     public SeedDemoService(IngestionService ingestionService,
                             EnvironmentalSnapshotRepository snapshotRepo,
                             SymptomLogRepository symptomRepo,
-                            BriefingLogRepository briefingLogRepo) {
+                            BriefingLogRepository briefingLogRepo,
+                            ReminderRuleRepository reminderRuleRepo,
+                            ConsentRecordRepository consentRepo) {
         this.ingestionService = ingestionService;
         this.snapshotRepo = snapshotRepo;
         this.symptomRepo = symptomRepo;
         this.briefingLogRepo = briefingLogRepo;
+        this.reminderRuleRepo = reminderRuleRepo;
+        this.consentRepo = consentRepo;
     }
 
     /**
-     * Seeds all three demo personas with 90 days of real environmental data
-     * and synthetic symptom logs tuned to each persona's sensitivity profile.
+     * Seeds the default user and all three personas, each with 90 days of its OWN
+     * city's real environmental history and synthetic symptom logs tuned to its
+     * sensitivity profile.
      *
-     * The real data is fetched once from Open-Meteo and reused across personas —
-     * they all "live" in Amsterdam for pollen availability. Their symptom
-     * responses to those same conditions differ by persona.
+     * Each persona lives in a distinct European city, so its environment — and
+     * therefore its Personal Risk Index — genuinely differs. The synthetic symptoms
+     * are generated from that city's real readings, so the learned model reflects how
+     * that individual would respond to their own local conditions.
      *
-     * @return map of persona name to row counts inserted
+     * @return map of persona name (or "ashoo-user") to symptom row counts inserted
      */
     public Map<String, Integer> seedAllPersonas() {
-        log.info("Seeding demo data for all three personas (Amsterdam, 90 days)");
+        log.info("Seeding demo data: each persona in its own EU city with its own 90-day history");
 
-        // Fetch 90 days of real environmental history once
-        int envRows = ingestionService.seedHistory(AMSTERDAM_LAT, AMSTERDAM_LON, AMSTERDAM_CITY, 90);
-        log.info("Seeded {} real environmental rows for Amsterdam", envRows);
-
-        // Fetch the snapshots back to use as input for symptom generation
-        LocalDate endDate = LocalDate.now().minusDays(1);
-        LocalDate startDate = endDate.minusDays(90);
-        List<EnvironmentalSnapshot> snapshots = snapshotRepo.findByDateRange(
-                "ashoo-user",
-                startDate.atStartOfDay(ZoneOffset.UTC).toInstant(),
-                endDate.plusDays(1).atStartOfDay(ZoneOffset.UTC).toInstant());
-
-        // Seed the three browseable personas under their own ids...
         Map<String, Integer> results = new java.util.LinkedHashMap<>();
-        results.put("alex",   seedFor("demo-alex",   "alex",   snapshots));
-        results.put("jordan", seedFor("demo-jordan", "jordan", snapshots));
-        results.put("morgan", seedFor("demo-morgan", "morgan", snapshots));
+        for (PersonaSeed ps : PERSONA_SEEDS) {
+            int envRows = ingestionService.seedHistory(ps.lat(), ps.lon(), ps.city(), 90, ps.userId());
+            log.info("Seeded {} real environmental rows for {} ({})", envRows, ps.userId(), ps.city());
 
-        // ...and ALSO project one profile onto the default user so the live dashboard,
-        // risk score, briefing, and Insights have data the moment seeding finishes.
-        results.put(DEFAULT_USER, seedFor(DEFAULT_USER, DEFAULT_USER_PROFILE, snapshots));
+            // Read that persona's own freshly-stored history back as the input for
+            // symptom generation and correlation.
+            LocalDate endDate = LocalDate.now().minusDays(1);
+            LocalDate startDate = endDate.minusDays(90);
+            List<EnvironmentalSnapshot> snapshots = snapshotRepo.findByDateRange(
+                    ps.userId(),
+                    startDate.atStartOfDay(ZoneOffset.UTC).toInstant(),
+                    endDate.plusDays(1).atStartOfDay(ZoneOffset.UTC).toInstant());
+
+            results.put(resultKey(ps.userId()),
+                    seedFor(ps.userId(), ps.profile(), snapshots, ps.city()));
+        }
 
         // Drop any same-day cached briefings (default user + personas) so each regenerates
         // against the freshly seeded numbers instead of serving a stale pre-seed briefing.
@@ -113,8 +159,60 @@ public class SeedDemoService {
         briefingLogRepo.deleteByUserId("demo-jordan");
         briefingLogRepo.deleteByUserId("demo-morgan");
 
+        // Give each persona its pre-configured reminders so the reminders surface is
+        // populated when switching personas.
+        seedRemindersAndConsent();
+
         log.info("Demo seeding complete: {}", results);
         return results;
+    }
+
+    /** Short result key: the persona name for {@code demo-*} ids, else the id itself. */
+    private static String resultKey(String userId) {
+        return userId.startsWith("demo-") ? userId.substring("demo-".length()) : userId;
+    }
+
+    /**
+     * Installs each demo persona's pre-configured reminder rules (and a demo consent
+     * record so the consent-gated engine will surface them). Idempotent: existing rules
+     * for a persona are cleared first, and consent is only granted if absent.
+     *
+     * Only the synthetic personas are seeded — the real "you" user keeps the genuine
+     * consent flow and sets up their own reminders.
+     */
+    private void seedRemindersAndConsent() {
+        for (Map.Entry<String, List<ReminderSpec>> entry : PERSONA_REMINDERS.entrySet()) {
+            String userId = entry.getKey();
+            ensureDemoConsent(userId);
+
+            List<ReminderRule> existing = reminderRuleRepo.findActiveByUserId(userId);
+            if (!existing.isEmpty()) reminderRuleRepo.deleteAll(existing);
+
+            for (ReminderSpec spec : entry.getValue()) {
+                ReminderRule rule = new ReminderRule();
+                rule.setUserId(userId);
+                rule.setRiskScoreThreshold(spec.threshold());
+                rule.setUserNote(spec.note());
+                rule.setMedicationId(null);
+                // Daytime window so demo reminders never "fire" as a late-night ping.
+                rule.setTimeWindowStart(LocalTime.of(7, 0));
+                rule.setTimeWindowEnd(LocalTime.of(22, 0));
+                rule.setIsActive(true);
+                rule.setCreatedAt(Instant.now());
+                reminderRuleRepo.save(rule);
+            }
+            log.info("Seeded {} reminder rule(s) for {}", entry.getValue().size(), userId);
+        }
+    }
+
+    /** Grants a demo consent record for a synthetic persona if it has none yet. */
+    private void ensureDemoConsent(String userId) {
+        if (consentRepo.findLatestByUserId(userId).isPresent()) return;
+        ConsentRecord consent = new ConsentRecord();
+        consent.setUserId(userId);
+        consent.setConsentedAt(Instant.now());
+        consent.setDisclaimerText("Seeded demo persona: advisory only, not medical advice.");
+        consentRepo.save(consent);
     }
 
     /**
@@ -126,7 +224,7 @@ public class SeedDemoService {
      * @return number of symptom log rows inserted
      */
     public int seedPersona(String persona, List<EnvironmentalSnapshot> snapshots) {
-        return seedFor("demo-" + persona, persona, snapshots);
+        return seedFor("demo-" + persona, persona, snapshots, AMSTERDAM_CITY);
     }
 
     /**
@@ -139,21 +237,17 @@ public class SeedDemoService {
      * @param userId    the user id to write logs under (e.g. "demo-morgan" or "ashoo-user")
      * @param persona   which trigger profile to apply: "alex", "jordan", or "morgan"
      * @param snapshots the real environmental snapshots to correlate against
+     * @param cityName  the city to stamp on each log — MUST match the city of {@code snapshots}
+     *                  so the correlation engine's location filter keeps these symptom days
      * @return number of symptom log rows inserted
      */
-    public int seedFor(String userId, String persona, List<EnvironmentalSnapshot> snapshots) {
+    public int seedFor(String userId, String persona, List<EnvironmentalSnapshot> snapshots,
+                       String cityName) {
         Random rng = new Random((userId + persona).hashCode());
 
         // Clear any prior synthetic logs for this user so re-seeding is idempotent
         // (never touches REAL user entries).
         symptomRepo.deleteSyntheticByUserId(userId);
-
-        // Seeded symptom logs MUST carry the same city as the shared environmental
-        // data (Amsterdam). The correlation engine filters symptom days to the tracked
-        // location, so a divergent city (e.g. a persona's cosmetic display location)
-        // would discard every symptom day and learn a zero-weight model. The persona's
-        // human-facing location lives in the frontend and /demo/profiles, not here.
-        String cityName = AMSTERDAM_CITY;
 
         List<SymptomLog> logs = new ArrayList<>();
 

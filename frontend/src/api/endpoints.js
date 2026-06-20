@@ -65,13 +65,15 @@ export const getMedicationUsage = () =>
   http.get('/api/v1/medications/usage').then((r) => r.data);
 
 // ---- Reminder rules + current reminders ----------------------------------
-export const getReminderRules = () =>
-  http.get('/api/v1/reminder-rules').then((r) => r.data);
+// `user` is the optional persona key; omitted means the real default user. Only the
+// read paths are persona-aware; creating/deleting always act on the real user.
+export const getReminderRules = (user) =>
+  http.get('/api/v1/reminder-rules', { params: { user } }).then((r) => r.data);
 export const addReminderRule = (body) =>
   http.post('/api/v1/reminder-rules', body).then((r) => r.data);
 export const deleteReminderRule = (id) => http.delete(`/api/v1/reminder-rules/${id}`);
-export const getCurrentReminders = () =>
-  http.get('/api/v1/reminders/current').then((r) => r.data);
+export const getCurrentReminders = (user) =>
+  http.get('/api/v1/reminders/current', { params: { user } }).then((r) => r.data);
 
 // ---- Demo ----------------------------------------------------------------
 export const getDemoProfiles = () => http.get('/api/v1/demo/profiles').then((r) => r.data);
